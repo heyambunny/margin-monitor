@@ -1,0 +1,12 @@
+streamlit
+fastapi
+uvicorn
+pandas
+requests
+psycopg2-binary
+bcrypt
+python-multipart
+python-dotenv
+python-jose[cryptography]
+jinja2
+streamlit-lottie
