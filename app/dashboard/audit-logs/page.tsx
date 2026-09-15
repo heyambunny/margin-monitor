@@ -275,9 +275,10 @@ export default function AuditLogsPage() {
               </SelectTrigger>
               <SelectContent className={cardBg}>
                 <SelectItem value="All" className="text-xs">All Modules</SelectItem>
+                <SelectItem value="projection" className="text-xs">Projection</SelectItem>
                 <SelectItem value="billing" className="text-xs">Billing</SelectItem>
-                <SelectItem value="vendor" className="text-xs">Vendor</SelectItem>
-                <SelectItem value="auth" className="text-xs">Auth</SelectItem>
+                <SelectItem value="bulk_upload" className="text-xs">Bulk Upload</SelectItem>
+                <SelectItem value="user_management" className="text-xs">User Management</SelectItem>
               </SelectContent>
             </Select>
 

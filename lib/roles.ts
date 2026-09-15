@@ -17,6 +17,10 @@ export const ROLE_NAMES: Record<number, string> = {
 export const ROLE_PAGES: Record<number, string[]> = {
   1: [
     '/dashboard',
+    '/dashboard/projections/add',
+    '/dashboard/billing/convert',
+    '/dashboard/billing',
+    '/dashboard/projections/edit',
     '/dashboard/reports',
     '/dashboard/clients',
     '/dashboard/bulk-upload',

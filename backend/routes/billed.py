@@ -4,9 +4,9 @@ from backend.auth.jwt_handler import require_roles
 
 router = APIRouter()
 
-# Billed - Finance (2) only, matching the old app's tab structure.
+# Billed - Admin (1) and Finance (2).
 @router.get("/billed")
-async def get_billed_invoices(user: dict = Depends(require_roles(2))):
+async def get_billed_invoices(user: dict = Depends(require_roles(1, 2))):
     conn = get_connection()
     try:
         cursor = conn.cursor()

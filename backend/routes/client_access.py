@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from backend.db import get_connection, release_connection
 from backend.auth.jwt_handler import get_current_user, require_admin
+from utils.audit import log_audit
+from datetime import datetime
 import bcrypt
 
 router = APIRouter()
@@ -83,8 +85,13 @@ async def create_user(data: UserCreate, user: dict = Depends(require_admin)):
         """, (data.name, data.email, hashed, role_id))
         
         user_id = cursor.fetchone()[0]
+
+        log_audit(cursor, "users", user_id, "user",
+                   None, f"{data.name} ({data.email}, role={data.role})", "INSERT",
+                   user["user_id"], user["role_id"], "user_management", "HIGH")
+
         conn.commit()
-        
+
         return {
             "id": user_id,
             "name": data.name,
@@ -178,7 +185,11 @@ async def assign_client(data: dict, user: dict = Depends(require_admin)):
             VALUES (%s, %s)
             ON CONFLICT (user_id, client_id) DO NOTHING
         """, (data["user_id"], data["client_id"]))
-        
+
+        log_audit(cursor, "user_client_access", data["client_id"], "client_access",
+                   None, f"user {data['user_id']} assigned to client {data['client_id']}", "INSERT",
+                   user["user_id"], user["role_id"], "user_management", "MEDIUM")
+
         conn.commit()
         return {"message": "Client assigned successfully"}
         
@@ -199,7 +210,11 @@ async def remove_client(data: dict, user: dict = Depends(require_admin)):
             DELETE FROM user_client_access
             WHERE user_id = %s AND client_id = %s
         """, (data["user_id"], data["client_id"]))
-        
+
+        log_audit(cursor, "user_client_access", data["client_id"], "client_access",
+                   f"user {data['user_id']} assigned to client {data['client_id']}", None, "DELETE",
+                   user["user_id"], user["role_id"], "user_management", "MEDIUM")
+
         conn.commit()
         return {"message": "Client removed successfully"}
         

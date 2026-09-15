@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from backend.db import get_connection, release_connection, get_user_client_ids
 from backend.auth.jwt_handler import require_roles
+from utils.audit import log_audit
 import traceback
 
 router = APIRouter()
@@ -21,9 +22,9 @@ class ProjectionRequest(BaseModel):
     financial_year: str
     vendors: List[VendorItem] = []
 
-# Add Projection - Finance (2) only, matching the old app's tab structure.
+# Add Projection - Admin (1) and Finance (2).
 @router.post("/projection")
-async def create_projection(data: ProjectionRequest, user: dict = Depends(require_roles(2))):
+async def create_projection(data: ProjectionRequest, user: dict = Depends(require_roles(1, 2))):
     print(f"📥 Received projection request from user: {user}")
     print(f"  client_id: {data.client_id}")
     print(f"  program_id: {data.program_id}")
@@ -76,6 +77,18 @@ async def create_projection(data: ProjectionRequest, user: dict = Depends(requir
                 VALUES (%s, %s, %s)
             """, (billing_id, vendor.vendor_id, vendor.amount))
 
+        log_audit(cursor, "billing_entries", billing_id, "invoice_description",
+                   None, data.description, "INSERT",
+                   user["user_id"], user["role_id"], "projection", "MEDIUM")
+        log_audit(cursor, "billing_entries", billing_id, "client_billed_amount",
+                   None, data.amount, "INSERT",
+                   user["user_id"], user["role_id"], "projection", "HIGH")
+        if data.vendors:
+            vendors_summary = "; ".join(f"vendor {v.vendor_id}: {v.amount}" for v in data.vendors)
+            log_audit(cursor, "vendor_expenses", billing_id, "vendors",
+                       None, vendors_summary, "INSERT",
+                       user["user_id"], user["role_id"], "projection", "MEDIUM")
+
         conn.commit()
         return {"id": billing_id, "message": "Projection created successfully"}
 
@@ -93,9 +106,9 @@ async def create_projection(data: ProjectionRequest, user: dict = Depends(requir
         if conn:
             release_connection(conn)
 
-# Used by the Convert to Billing page - Finance (2) only.
+# Used by the Convert to Billing page - Admin (1) and Finance (2).
 @router.get("/projections/pending")
-async def get_pending_projections(user: dict = Depends(require_roles(2))):
+async def get_pending_projections(user: dict = Depends(require_roles(1, 2))):
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -146,9 +159,9 @@ async def get_pending_projections(user: dict = Depends(require_roles(2))):
     finally:
         release_connection(conn)
 
-# Used by the Edit Projection page - Finance (2) only.
+# Used by the Edit Projection page - Admin (1) and Finance (2).
 @router.get("/projections/active")
-async def get_active_projections(user: dict = Depends(require_roles(2))):
+async def get_active_projections(user: dict = Depends(require_roles(1, 2))):
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -197,7 +210,7 @@ async def get_active_projections(user: dict = Depends(require_roles(2))):
 
 # Not currently called by the frontend, but scoped/gated for safety.
 @router.get("/projections")
-async def get_projections(user: dict = Depends(require_roles(2))):
+async def get_projections(user: dict = Depends(require_roles(1, 2))):
     conn = get_connection()
     try:
         cursor = conn.cursor()

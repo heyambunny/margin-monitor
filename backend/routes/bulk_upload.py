@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, File, UploadFile
 from backend.db import get_connection, release_connection
 from backend.auth.jwt_handler import require_admin
+from utils.audit import log_audit
 import pandas as pd
 import io
 import json
@@ -247,7 +248,11 @@ async def bulk_upload(
                 ))
                 
                 billing_id = cursor.fetchone()[0]
-                
+
+                log_audit(cursor, "billing_entries", billing_id, "bulk_upload",
+                           None, f"{client} / {program} / {category} / {amount_float}", "INSERT",
+                           user["user_id"], user["role_id"], "bulk_upload", "MEDIUM")
+
                 # Insert vendors
                 for v in range(1, 6):
                     vendor_col = f'Vendor{v}Name'
