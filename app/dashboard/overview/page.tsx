@@ -34,6 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { API_URL } from '@/lib/api';
 
 // Minimal blue shades for avatars - matches the main dashboard palette
 const BLUE_SHADES = ['#3b82f6', '#60a5fa', '#93c5fd', '#2563eb', '#1d4ed8', '#bfdbfe', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0284c7'];
@@ -72,7 +73,7 @@ export default function OverviewPage() {
     setError('');
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/overview', {
+      const response = await fetch(`${API_URL}/api/overview`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 

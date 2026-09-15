@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { API_URL } from '@/lib/api';
 
 export default function BulkUploadPage() {
   const { user, loading } = useAuth();
@@ -96,7 +97,7 @@ export default function BulkUploadPage() {
       
       setProgress(30);
       
-      const response = await fetch('http://localhost:8000/api/bulk-upload', {
+      const response = await fetch(`${API_URL}/api/bulk-upload`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`

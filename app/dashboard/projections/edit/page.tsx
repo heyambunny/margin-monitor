@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/lib/providers/ThemeProvider';
-import { 
-  Search, X, RefreshCw, ChevronLeft, ChevronRight, 
-  Pencil, Save, X as XIcon, Plus, Trash2, FileText, DollarSign, Building2 
+import {
+  Search, X, RefreshCw, ChevronLeft, ChevronRight,
+  Pencil, Save, X as XIcon, Plus, Trash2, FileText, DollarSign, Building2
 } from 'lucide-react';
+import { API_URL } from '@/lib/api';
 
 export default function EditProjectionPage() {
   const { user, loading } = useAuth();
@@ -75,8 +76,8 @@ export default function EditProjectionPage() {
       const headers = { Authorization: `Bearer ${token}` };
       
       const [projRes, vendRes] = await Promise.all([
-        fetch('http://localhost:8000/api/projections/active', { headers }),
-        fetch('http://localhost:8000/api/vendors', { headers }),
+        fetch(`${API_URL}/api/projections/active`, { headers }),
+        fetch(`${API_URL}/api/vendors`, { headers }),
       ]);
       
       const projectionsData = await projRes.json();
@@ -208,7 +209,7 @@ export default function EditProjectionPage() {
           }))
       };
       
-      const response = await fetch(`http://localhost:8000/api/edit-projection/${editingId}`, {
+      const response = await fetch(`${API_URL}/api/edit-projection/${editingId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -227,7 +228,7 @@ export default function EditProjectionPage() {
       
       // Refresh the list
       const headers = { Authorization: `Bearer ${token}` };
-      const res = await fetch('http://localhost:8000/api/projections/active', { headers });
+      const res = await fetch(`${API_URL}/api/projections/active`, { headers });
       const data = await res.json();
       setProjections(Array.isArray(data) ? data : []);
       

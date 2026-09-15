@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/lib/providers/ThemeProvider';
 import { Search, X, RefreshCw, ChevronLeft, ChevronRight, FileText, DollarSign, TrendingUp, BarChart3, Download } from 'lucide-react';
+import { API_URL } from '@/lib/api';
 
 export default function ReportsPage() {
   const { user, loading } = useAuth();
@@ -68,7 +69,7 @@ export default function ReportsPage() {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
       
-      const res = await fetch('http://localhost:8000/api/reports', { headers });
+      const res = await fetch(`${API_URL}/api/reports`, { headers });
       const data = await res.json();
       
       const reportsData = Array.isArray(data) ? data : [];

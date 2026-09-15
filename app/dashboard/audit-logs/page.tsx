@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { API_URL } from '@/lib/api';
 
 export default function AuditLogsPage() {
   const { user, loading } = useAuth();
@@ -91,7 +92,7 @@ export default function AuditLogsPage() {
         payload.date_range = [startDate, endDate];
       }
       
-      const response = await fetch('http://localhost:8000/api/audit-logs', {
+      const response = await fetch(`${API_URL}/api/audit-logs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

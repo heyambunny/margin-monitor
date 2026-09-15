@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/lib/providers/ThemeProvider';
 import { Search, X, RefreshCw, ChevronLeft, ChevronRight, FileText, DollarSign, Building2, Calendar } from 'lucide-react';
+import { API_URL } from '@/lib/api';
 
 export default function BilledPage() {
   const { user, loading } = useAuth();
@@ -61,7 +62,7 @@ export default function BilledPage() {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
       
-      const res = await fetch('http://localhost:8000/api/billed', { headers });
+      const res = await fetch(`${API_URL}/api/billed`, { headers });
       const data = await res.json();
       
       const billsData = Array.isArray(data) ? data : [];

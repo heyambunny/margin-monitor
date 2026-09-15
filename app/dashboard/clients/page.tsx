@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { AnimatedProgress } from '@/components/ui/animated-progress';
+import { API_URL } from '@/lib/api';
 
 // Minimal blue shades for avatars - matches the rest of the app
 const BLUE_SHADES = ['#3b82f6', '#60a5fa', '#93c5fd', '#2563eb', '#1d4ed8', '#bfdbfe', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0284c7'];
@@ -82,8 +83,8 @@ export default function ClientsPage() {
       const headers = { Authorization: `Bearer ${token}` };
       
       const [usersRes, clientsRes] = await Promise.all([
-        fetch('http://localhost:8000/api/users', { headers }),
-        fetch('http://localhost:8000/api/clients', { headers }),
+        fetch(`${API_URL}/api/users`, { headers }),
+        fetch(`${API_URL}/api/clients`, { headers }),
       ]);
       
       const usersData = await usersRes.json();
@@ -107,7 +108,7 @@ export default function ClientsPage() {
   const fetchUserClients = async (userId: number) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/user-clients/${userId}`, {
+      const response = await fetch(`${API_URL}/api/user-clients/${userId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -130,7 +131,7 @@ export default function ClientsPage() {
     
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/assign-client', {
+      const response = await fetch(`${API_URL}/api/assign-client`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -159,7 +160,7 @@ export default function ClientsPage() {
     
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/remove-client', {
+      const response = await fetch(`${API_URL}/api/remove-client`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -187,7 +188,7 @@ export default function ClientsPage() {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/users', {
+      const response = await fetch(`${API_URL}/api/users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/lib/providers/ThemeProvider';
-import { 
-  Plus, Trash2, Save, X, Search, ChevronLeft, ChevronRight, 
-  RefreshCw, Receipt, Building2, Calendar, DollarSign 
+import {
+  Plus, Trash2, Save, X, Search, ChevronLeft, ChevronRight,
+  RefreshCw, Receipt, Building2, Calendar, DollarSign
 } from 'lucide-react';
+import { API_URL } from '@/lib/api';
 
 export default function ConvertBillingPage() {
   const { user, loading } = useAuth();
@@ -92,8 +93,8 @@ export default function ConvertBillingPage() {
       const headers = { Authorization: `Bearer ${token}` };
       
       const [projRes, vendRes] = await Promise.all([
-        fetch('http://localhost:8000/api/projections/pending', { headers }),
-        fetch('http://localhost:8000/api/vendors', { headers }),
+        fetch(`${API_URL}/api/projections/pending`, { headers }),
+        fetch(`${API_URL}/api/vendors`, { headers }),
       ]);
       
       const projectionsData = await projRes.json();
@@ -241,7 +242,7 @@ export default function ConvertBillingPage() {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/convert-billing', {
+      const response = await fetch(`${API_URL}/api/convert-billing`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

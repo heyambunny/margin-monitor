@@ -27,6 +27,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { AnimatedNumber } from '@/components/ui/animated-number';
+import { API_URL } from '@/lib/api';
 
 // Minimal blue shades for avatars - matches the rest of the app
 const BLUE_SHADES = ['#3b82f6', '#60a5fa', '#93c5fd', '#2563eb', '#1d4ed8', '#bfdbfe', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0284c7'];
@@ -100,7 +101,7 @@ export default function FinancePage() {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
 
-      const res = await fetch('http://localhost:8000/api/finance-dashboard', { headers });
+      const res = await fetch(`${API_URL}/api/finance-dashboard`, { headers });
       if (!res.ok) {
         throw new Error(`Failed to fetch finance data: ${res.status}`);
       }

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useTheme } from '@/lib/providers/ThemeProvider';
 import { Plus, Trash2, Save, Tag, Store, Calendar, Building2, Briefcase, Sparkles } from 'lucide-react';
 import { AnimatedNumber } from '@/components/ui/animated-number';
+import { API_URL } from '@/lib/api';
 
 export default function AddProjectionPage() {
   const { user, loading } = useAuth();
@@ -58,10 +59,10 @@ export default function AddProjectionPage() {
           const headers = { Authorization: `Bearer ${token}` };
           
           const [clientsRes, programsRes, categoriesRes, vendorsRes] = await Promise.all([
-            fetch('http://localhost:8000/api/clients', { headers }),
-            fetch('http://localhost:8000/api/programs', { headers }),
-            fetch('http://localhost:8000/api/categories', { headers }),
-            fetch('http://localhost:8000/api/vendors', { headers }),
+            fetch(`${API_URL}/api/clients`, { headers }),
+            fetch(`${API_URL}/api/programs`, { headers }),
+            fetch(`${API_URL}/api/categories`, { headers }),
+            fetch(`${API_URL}/api/vendors`, { headers }),
           ]);
 
           const clientsData = await clientsRes.json();
@@ -147,7 +148,7 @@ export default function AddProjectionPage() {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/projection', {
+      const response = await fetch(`${API_URL}/api/projection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

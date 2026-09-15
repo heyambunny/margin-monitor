@@ -28,6 +28,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { API_URL } from '@/lib/api';
 
 export default function EmailCenterPage() {
   const { user, loading } = useAuth();
@@ -77,7 +78,7 @@ export default function EmailCenterPage() {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/email/invoice/${invoiceId}`, {
+      const response = await fetch(`${API_URL}/api/email/invoice/${invoiceId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -105,7 +106,7 @@ export default function EmailCenterPage() {
   const fetchEmailLogs = async (id: string) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/email/logs/${id}`, {
+      const response = await fetch(`${API_URL}/api/email/logs/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -129,7 +130,7 @@ export default function EmailCenterPage() {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/email/preview', {
+      const response = await fetch(`${API_URL}/api/email/preview`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -170,7 +171,7 @@ export default function EmailCenterPage() {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/email/send', {
+      const response = await fetch(`${API_URL}/api/email/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

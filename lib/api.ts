@@ -1,6 +1,9 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Single source of truth for the backend base URL. Set NEXT_PUBLIC_API_URL
+// at build time in production (e.g. https://app.marginmonitor.in/api) -
+// falls back to localhost:8000 for local dev.
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export const api = axios.create({
   baseURL: API_URL,

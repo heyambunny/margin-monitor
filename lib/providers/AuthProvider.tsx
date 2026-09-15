@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import Cookies from 'js-cookie';
 import { getHomeForRole } from '@/lib/roles';
+import { API_URL } from '@/lib/api';
 
 interface User {
   id: number;
@@ -30,7 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
-      axios.get('http://localhost:8000/api/me', {
+      axios.get(`${API_URL}/api/me`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       .then(res => {
@@ -47,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const res = await axios.post('http://localhost:8000/api/login', { email, password });
+    const res = await axios.post(`${API_URL}/api/login`, { email, password });
     const { access_token, user } = res.data;
     localStorage.setItem('token', access_token);
     Cookies.set('token', access_token);
