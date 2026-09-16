@@ -28,7 +28,8 @@ async def get_billed_invoices(user: dict = Depends(get_current_user)):
                 JOIN clients c ON b.client_id = c.id
                 JOIN programs p ON b.program_id = p.id
                 WHERE b.invoice_no IS NOT NULL
-                  AND b.status = 'Billed'
+                  AND b.invoice_no != ''
+                  AND b.status != 'Deleted'
                 ORDER BY b.id DESC
             """)
         else:
@@ -47,7 +48,8 @@ async def get_billed_invoices(user: dict = Depends(get_current_user)):
                 JOIN programs p ON b.program_id = p.id
                 JOIN user_client_access uca ON uca.client_id = c.id
                 WHERE b.invoice_no IS NOT NULL
-                  AND b.status = 'Billed'
+                  AND b.invoice_no != ''
+                  AND b.status != 'Deleted'
                   AND uca.user_id = %s
                 ORDER BY b.id DESC
             """, (user["user_id"],))
