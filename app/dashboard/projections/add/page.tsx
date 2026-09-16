@@ -290,6 +290,7 @@ export default function AddProjectionPage() {
                 <label className={`block text-xs font-medium ${textLabel} mb-1`}>Client *</label>
                 <select
                   className={`w-full px-3 py-2 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} appearance-none`}
+                  style={{ colorScheme: isDark ? 'dark' : 'light' }}
                   value={formData.client_id}
                   onChange={(e) => {
                     setFormData({ ...formData, client_id: e.target.value, program_id: '' });
@@ -307,6 +308,7 @@ export default function AddProjectionPage() {
                 <label className={`block text-xs font-medium ${textLabel} mb-1`}>Program *</label>
                 <select
                   className={`w-full px-3 py-2 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} appearance-none disabled:opacity-50`}
+                  style={{ colorScheme: isDark ? 'dark' : 'light' }}
                   value={formData.program_id}
                   onChange={(e) => setFormData({ ...formData, program_id: e.target.value })}
                   required
@@ -325,6 +327,7 @@ export default function AddProjectionPage() {
                 <label className={`block text-xs font-medium ${textLabel} mb-1`}>Category *</label>
                 <select
                   className={`w-full px-3 py-2 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} appearance-none`}
+                  style={{ colorScheme: isDark ? 'dark' : 'light' }}
                   value={formData.category_id}
                   onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                   required
@@ -368,6 +371,7 @@ export default function AddProjectionPage() {
                 <label className={`block text-xs font-medium ${textLabel} mb-1`}>Invoice Month *</label>
                 <select
                   className={`w-full px-3 py-2 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} appearance-none`}
+                  style={{ colorScheme: isDark ? 'dark' : 'light' }}
                   value={formData.invoice_month}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -425,6 +429,7 @@ export default function AddProjectionPage() {
                   <div key={idx} className={`flex items-center gap-2 p-2 ${isDark ? 'bg-white/5' : 'bg-gray-50'} ${border} border rounded-lg`}>
                     <select
                       className={`flex-1 px-3 py-1.5 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} appearance-none`}
+                      style={{ colorScheme: isDark ? 'dark' : 'light' }}
                       value={row.vendor_id}
                       onChange={(e) => {
                         const newRows = [...vendorRows];

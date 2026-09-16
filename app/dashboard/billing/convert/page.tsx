@@ -365,6 +365,7 @@ export default function ConvertBillingPage() {
 
           <select
             className={`px-3 py-1.5 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText}`}
+            style={{ colorScheme: isDark ? 'dark' : 'light' }}
             value={filterClient}
             onChange={(e) => setFilterClient(e.target.value)}
           >
@@ -376,6 +377,7 @@ export default function ConvertBillingPage() {
 
           <select
             className={`px-3 py-1.5 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText}`}
+            style={{ colorScheme: isDark ? 'dark' : 'light' }}
             value={filterMonth}
             onChange={(e) => setFilterMonth(e.target.value)}
           >
@@ -579,6 +581,7 @@ export default function ConvertBillingPage() {
                 <label className={`block text-xs font-medium ${textLabel} mb-1`}>Status</label>
                 <select
                   className={`w-full px-3 py-1.5 text-sm ${inputBg} ${inputBorder} border rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText}`}
+                  style={{ colorScheme: isDark ? 'dark' : 'light' }}
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                 >
@@ -618,6 +621,7 @@ export default function ConvertBillingPage() {
                     <div key={idx} className={`flex items-center gap-2 p-1.5 ${vendorBg} ${vendorBorder} border rounded`}>
                       <select
                         className={`flex-1 px-2 py-1 text-xs ${inputBg} ${inputBorder} border rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText}`}
+                        style={{ colorScheme: isDark ? 'dark' : 'light' }}
                         value={row.vendor_id}
                         onChange={(e) => {
                           const newRows = [...vendorRows];

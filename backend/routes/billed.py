@@ -1,43 +1,56 @@
 from fastapi import APIRouter, HTTPException, Depends
-from backend.db import get_connection, release_connection, get_user_client_ids
-from backend.auth.jwt_handler import require_roles
+from backend.db import get_connection, release_connection
+from backend.auth.jwt_handler import get_current_user
 
 router = APIRouter()
 
-# Billed - Admin (1) and Finance (2).
 @router.get("/billed")
-async def get_billed_invoices(user: dict = Depends(require_roles(1, 2))):
+async def get_billed_invoices(user: dict = Depends(get_current_user)):
     conn = get_connection()
     try:
         cursor = conn.cursor()
 
-        query = """
-            SELECT
-                b.id,
-                b.invoice_no,
-                c.client_name,
-                p.program_name,
-                b.client_billed_amount as amount,
-                b.invoice_month,
-                b.invoice_date,
-                b.status
-            FROM billing_entries b
-            JOIN clients c ON b.client_id = c.id
-            JOIN programs p ON b.program_id = p.id
-            WHERE b.invoice_no IS NOT NULL
-              AND b.status = 'Billed'
-        """
-        params = []
-
-        if user["role_id"] != 1:
-            client_ids = get_user_client_ids(cursor, user["user_id"])
-            if not client_ids:
-                return []
-            query += " AND b.client_id = ANY(%s)"
-            params.append(client_ids)
-
-        query += " ORDER BY b.id DESC"
-        cursor.execute(query, params if params else None)
+        # Admin sees every billed invoice. Everyone else only sees invoices
+        # for clients they've been granted access to (matches the clients
+        # endpoint's access model).
+        if user.get("role_id") == 1:
+            cursor.execute("""
+                SELECT
+                    b.id,
+                    b.invoice_no,
+                    c.client_name,
+                    p.program_name,
+                    b.client_billed_amount as amount,
+                    b.invoice_month,
+                    b.invoice_date,
+                    b.status
+                FROM billing_entries b
+                JOIN clients c ON b.client_id = c.id
+                JOIN programs p ON b.program_id = p.id
+                WHERE b.invoice_no IS NOT NULL
+                  AND b.status = 'Billed'
+                ORDER BY b.id DESC
+            """)
+        else:
+            cursor.execute("""
+                SELECT
+                    b.id,
+                    b.invoice_no,
+                    c.client_name,
+                    p.program_name,
+                    b.client_billed_amount as amount,
+                    b.invoice_month,
+                    b.invoice_date,
+                    b.status
+                FROM billing_entries b
+                JOIN clients c ON b.client_id = c.id
+                JOIN programs p ON b.program_id = p.id
+                JOIN user_client_access uca ON uca.client_id = c.id
+                WHERE b.invoice_no IS NOT NULL
+                  AND b.status = 'Billed'
+                  AND uca.user_id = %s
+                ORDER BY b.id DESC
+            """, (user["user_id"],))
 
         rows = cursor.fetchall()
         return [

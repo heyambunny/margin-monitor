@@ -306,6 +306,7 @@ export default function EditProjectionPage() {
 
           <select
             className={`px-3 py-1.5 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText}`}
+            style={{ colorScheme: isDark ? 'dark' : 'light' }}
             value={filterClient}
             onChange={(e) => setFilterClient(e.target.value)}
           >
@@ -481,6 +482,7 @@ export default function EditProjectionPage() {
                     <div key={idx} className={`flex items-center gap-2 p-1.5 ${vendorBg} ${vendorBorder} border rounded`}>
                       <select
                         className={`flex-1 px-2 py-1 text-xs ${inputBg} ${inputBorder} border rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText}`}
+                        style={{ colorScheme: isDark ? 'dark' : 'light' }}
                         value={row.vendor_id}
                         onChange={(e) => {
                           const newRows = [...vendorRows];

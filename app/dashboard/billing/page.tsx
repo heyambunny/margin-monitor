@@ -217,6 +217,7 @@ export default function BilledPage() {
 
           <select
             className={`px-3 py-1.5 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText}`}
+            style={{ colorScheme: isDark ? 'dark' : 'light' }}
             value={filterClient}
             onChange={(e) => setFilterClient(e.target.value)}
           >
