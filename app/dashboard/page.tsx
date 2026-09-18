@@ -47,6 +47,8 @@ import { API_URL } from '@/lib/api';
 // Minimal blue shades for charts
 const BLUE_SHADES = ['#3b82f6', '#60a5fa', '#93c5fd', '#2563eb', '#1d4ed8', '#bfdbfe', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0284c7'];
 const PIE_COLORS = ['#3b82f6', '#93c5fd'];
+// Financial year month order (Apr through Mar)
+const FY_MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'] as const;
 
 export default function DashboardPage() {
   const { user, loading } = useAuth();
@@ -141,14 +143,13 @@ export default function DashboardPage() {
         quarterlyData: [],
         top10Clients: [],
         vendorData: [],
-        quarterlyClientData: [],
-        quarterlyTotals: {
-          billed: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
-          billedGM: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
-          projected: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
-          projectedGM: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
+        monthlyClientData: [],
+        monthlyTotals: {
+          billed: {}, billedGM: {}, projected: {}, projectedGM: {},
           totalBilled: 0,
-          totalGM: 0,
+          totalBilledGM: 0,
+          totalProjected: 0,
+          totalProjectedGM: 0,
         },
       };
     }
@@ -299,70 +300,70 @@ export default function DashboardPage() {
       }
     });
 
-    // Quarterly Client Data - Billed/GM/Projected/Gm broken down by quarter per client
-    const quarterlyClientMap: Record<string, any> = {};
+    // Monthly Client Data - Billed/GM/Projected/GM broken down by month per
+    // client, financial year order (Apr through Mar).
+    const monthlyClientMap: Record<string, any> = {};
+    const zeroByMonth = () => Object.fromEntries(monthOrder.map((m) => [m, 0]));
     dashboardData.forEach((d: any) => {
       const name = d.client_name || 'Unknown';
       const rawMonth = d.invoice_month || 'Unknown';
       const month = rawMonth.split('-')[0];
-      const monthMap: Record<string, string> = {
-        'Apr': 'Q1', 'May': 'Q1', 'Jun': 'Q1',
-        'Jul': 'Q2', 'Aug': 'Q2', 'Sep': 'Q2',
-        'Oct': 'Q3', 'Nov': 'Q3', 'Dec': 'Q3',
-        'Jan': 'Q4', 'Feb': 'Q4', 'Mar': 'Q4'
-      };
-      const quarter = monthMap[month];
-      if (!quarter) return;
+      if (!monthOrder.includes(month)) return;
 
-      if (!quarterlyClientMap[name]) {
-        quarterlyClientMap[name] = {
+      if (!monthlyClientMap[name]) {
+        monthlyClientMap[name] = {
           client_name: name,
-          billed: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
-          billedGM: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
-          projected: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
-          projectedGM: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
+          billed: zeroByMonth(),
+          billedGM: zeroByMonth(),
+          projected: zeroByMonth(),
+          projectedGM: zeroByMonth(),
         };
       }
 
       const amt = d.client_billed_amount || 0;
       const margin = amt - (d.vendor_cost || 0) - (d.credit_note || 0);
-      const bucket = quarterlyClientMap[name];
+      const bucket = monthlyClientMap[name];
 
       if (d.expense_type_id === 1) {
-        bucket.projected[quarter] += amt;
-        bucket.projectedGM[quarter] += margin;
+        bucket.projected[month] += amt;
+        bucket.projectedGM[month] += margin;
       } else {
-        bucket.billed[quarter] += amt;
-        bucket.billedGM[quarter] += margin;
+        bucket.billed[month] += amt;
+        bucket.billedGM[month] += margin;
       }
     });
 
-    const quarterlyClientData = Object.values(quarterlyClientMap)
+    const monthlyClientData = Object.values(monthlyClientMap)
       .map((c: any) => {
-        const totalBilled = c.billed.Q1 + c.billed.Q2 + c.billed.Q3 + c.billed.Q4;
-        const totalGM = c.billedGM.Q1 + c.billedGM.Q2 + c.billedGM.Q3 + c.billedGM.Q4
-          + c.projectedGM.Q1 + c.projectedGM.Q2 + c.projectedGM.Q3 + c.projectedGM.Q4;
-        return { ...c, totalBilled, totalGM };
+        const totalBilled = monthOrder.reduce((sum, m) => sum + c.billed[m], 0);
+        const totalBilledGM = monthOrder.reduce((sum, m) => sum + c.billedGM[m], 0);
+        const totalProjected = monthOrder.reduce((sum, m) => sum + c.projected[m], 0);
+        const totalProjectedGM = monthOrder.reduce((sum, m) => sum + c.projectedGM[m], 0);
+        return { ...c, totalBilled, totalBilledGM, totalProjected, totalProjectedGM };
       })
       .sort((a: any, b: any) => b.totalBilled - a.totalBilled);
 
-    const quarterlyTotals = quarterlyClientData.reduce((acc: any, c: any) => {
-      (['Q1', 'Q2', 'Q3', 'Q4'] as const).forEach((q) => {
-        acc.billed[q] += c.billed[q];
-        acc.billedGM[q] += c.billedGM[q];
-        acc.projected[q] += c.projected[q];
-        acc.projectedGM[q] += c.projectedGM[q];
+    const monthlyTotals = monthlyClientData.reduce((acc: any, c: any) => {
+      monthOrder.forEach((m) => {
+        acc.billed[m] += c.billed[m];
+        acc.billedGM[m] += c.billedGM[m];
+        acc.projected[m] += c.projected[m];
+        acc.projectedGM[m] += c.projectedGM[m];
       });
       acc.totalBilled += c.totalBilled;
-      acc.totalGM += c.totalGM;
+      acc.totalBilledGM += c.totalBilledGM;
+      acc.totalProjected += c.totalProjected;
+      acc.totalProjectedGM += c.totalProjectedGM;
       return acc;
     }, {
-      billed: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
-      billedGM: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
-      projected: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
-      projectedGM: { Q1: 0, Q2: 0, Q3: 0, Q4: 0 },
+      billed: zeroByMonth(),
+      billedGM: zeroByMonth(),
+      projected: zeroByMonth(),
+      projectedGM: zeroByMonth(),
       totalBilled: 0,
-      totalGM: 0,
+      totalBilledGM: 0,
+      totalProjected: 0,
+      totalProjectedGM: 0,
     });
 
     // Top 10 Clients by Margin
@@ -407,8 +408,8 @@ export default function DashboardPage() {
       quarterlyData,
       top10Clients,
       vendorData,
-      quarterlyClientData,
-      quarterlyTotals,
+      monthlyClientData,
+      monthlyTotals,
     };
   };
 
@@ -423,11 +424,18 @@ export default function DashboardPage() {
     quarterlyData,
     top10Clients,
     vendorData,
-    quarterlyClientData,
-    quarterlyTotals,
+    monthlyClientData,
+    monthlyTotals,
   } = processData();
 
   const currentYear = new Date().getFullYear();
+
+  // Billed columns cover the FY-to-date (past + current month); Projected
+  // columns cover the rest of the year (current + future months). FY_MONTHS
+  // starts at Apr, so shift JS's Jan-based month index (0-11) by 9.
+  const currentFYMonthIndex = (new Date().getMonth() + 9) % 12;
+  const billedMonths = FY_MONTHS.slice(0, currentFYMonthIndex + 1);
+  const projectedMonths = FY_MONTHS.slice(currentFYMonthIndex);
 
   const tooltipStyle = {
     backgroundColor: tooltipBg,
@@ -1068,13 +1076,13 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Quarterly Client Breakdown - Billed / GM / Projected / Gm */}
+        {/* Monthly Client Breakdown - Billed (FY-to-date) / Projected (current + future) */}
         <Card className={`${cardBg} ${borderColor} border`}>
           <CardHeader className="p-3 pb-1">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
-                <CardTitle className={`text-xs font-medium ${textColor}`}>Quarterly Client Breakdown</CardTitle>
-                <CardDescription className={`text-[10px] ${textMuted}`}>Billed &amp; Projected revenue with Gross Margin (GM) by quarter</CardDescription>
+                <CardTitle className={`text-xs font-medium ${textColor}`}>Monthly Client Breakdown</CardTitle>
+                <CardDescription className={`text-[10px] ${textMuted}`}>Billed through the current month, Projected for the rest of FY (Apr-Mar)</CardDescription>
               </div>
               <div className="flex items-center gap-2">
                 <span className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded ${isDark ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-100 text-orange-700'}`}>
@@ -1087,46 +1095,46 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="p-3 pt-0">
-            <p className={`text-[9px] ${textMuted} mb-1.5 sm:hidden`}>Scroll horizontally to see all quarters →</p>
+            <p className={`text-[9px] ${textMuted} mb-1.5 sm:hidden`}>Scroll horizontally to see all months →</p>
             <div className="overflow-x-auto max-h-[420px] overflow-y-auto rounded-lg border-collapse">
               <table className="w-full text-xs border-collapse">
                 <thead className="sticky top-0 z-20">
                   <tr>
-                    <th rowSpan={2} className={`sticky left-0 z-30 text-[9px] text-left py-2 pl-2 pr-3 align-bottom ${cardBg} ${textMuted} border-b border-r ${borderColor}`}>Client</th>
-                    <th colSpan={4} className={`text-[9px] text-center py-1.5 ${textColor} font-semibold border-b border-l-2 ${borderColor} ${isDark ? 'bg-orange-500/15 border-l-orange-400/60' : 'bg-orange-100 border-l-orange-400'}`}>
+                    <th rowSpan={3} className={`sticky left-0 z-30 text-[9px] text-left py-2 pl-2 pr-3 align-bottom ${cardBg} ${textMuted} border-b border-r ${borderColor}`}>Client</th>
+                    <th colSpan={billedMonths.length * 2 + 2} className={`text-[9px] text-center py-1.5 ${textColor} font-semibold border-b border-l-2 ${borderColor} ${isDark ? 'bg-orange-500/10 border-l-orange-400/60' : 'bg-orange-50 border-l-orange-400'}`}>
                       <span className="inline-flex items-center gap-1"><Receipt className="h-2.5 w-2.5" /> Billed</span>
                     </th>
-                    <th colSpan={4} className={`text-[9px] text-center py-1.5 ${textColor} font-semibold border-b ${borderColor} ${isDark ? 'bg-orange-500/25' : 'bg-orange-200/70'}`}>
-                      <span className="inline-flex items-center gap-1"><TrendingUp className="h-2.5 w-2.5" /> GM</span>
-                    </th>
-                    <th colSpan={4} className={`text-[9px] text-center py-1.5 ${textColor} font-semibold border-b border-l-2 ${borderColor} ${isDark ? 'bg-green-500/15 border-l-green-400/60' : 'bg-green-100 border-l-green-400'}`}>
+                    <th colSpan={projectedMonths.length * 2 + 2} className={`text-[9px] text-center py-1.5 ${textColor} font-semibold border-b border-l-2 ${borderColor} ${isDark ? 'bg-green-500/10 border-l-green-400/60' : 'bg-green-50 border-l-green-400'}`}>
                       <span className="inline-flex items-center gap-1"><BarChart3 className="h-2.5 w-2.5" /> Projected</span>
                     </th>
-                    <th colSpan={4} className={`text-[9px] text-center py-1.5 ${textColor} font-semibold border-b ${borderColor} ${isDark ? 'bg-green-500/25' : 'bg-green-200/70'}`}>
-                      <span className="inline-flex items-center gap-1"><TrendingUp className="h-2.5 w-2.5" /> GM</span>
-                    </th>
-                    <th rowSpan={2} className={`text-[9px] text-right py-2 px-2 align-bottom border-b border-l-2 ${borderColor} ${isDark ? 'bg-blue-500/10 text-blue-300 border-l-blue-400/60' : 'bg-blue-50 text-blue-700 border-l-blue-400'}`}>Total Billed</th>
-                    <th rowSpan={2} className={`text-[9px] text-right py-2 px-2 align-bottom border-b ${borderColor} ${isDark ? 'bg-blue-500/10 text-blue-300' : 'bg-blue-50 text-blue-700'}`}>Total GM</th>
                   </tr>
                   <tr>
-                    {['Q1', 'Q2', 'Q3', 'Q4'].map((q, i) => (
-                      <th key={`b-${q}`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} border-b ${i === 0 ? 'border-l-2' : ''} ${borderColor} ${isDark ? `bg-orange-500/10 ${i === 0 ? 'border-l-orange-400/60' : ''}` : `bg-orange-50 ${i === 0 ? 'border-l-orange-400' : ''}`}`}>{q}</th>
+                    {billedMonths.map((m, i) => (
+                      <th key={`bm-${m}`} colSpan={2} className={`text-[9px] text-center py-1 px-2 font-medium ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-orange-500/10 ${i === 0 ? 'border-l-orange-400/60' : ''}` : `bg-orange-50 ${i === 0 ? 'border-l-orange-400' : ''}`}`}>{m}</th>
                     ))}
-                    {['Q1', 'Q2', 'Q3', 'Q4'].map((q) => (
-                      <th key={`bg-${q}`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} ${isDark ? 'bg-orange-500/15' : 'bg-orange-100/70'} border-b ${borderColor}`}>{q}</th>
+                    <th rowSpan={2} className={`text-[9px] text-right py-2 px-2 align-bottom border-b border-l ${borderColor} ${isDark ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-50 text-orange-700'}`}>Total Billed</th>
+                    <th rowSpan={2} className={`text-[9px] text-right py-2 px-2 align-bottom border-b ${borderColor} ${isDark ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-50 text-orange-700'}`}>Total GM</th>
+                    {projectedMonths.map((m, i) => (
+                      <th key={`pm-${m}`} colSpan={2} className={`text-[9px] text-center py-1 px-2 font-medium ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-green-500/10 ${i === 0 ? 'border-l-green-400/60' : ''}` : `bg-green-50 ${i === 0 ? 'border-l-green-400' : ''}`}`}>{m}</th>
                     ))}
-                    {['Q1', 'Q2', 'Q3', 'Q4'].map((q, i) => (
-                      <th key={`p-${q}`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} border-b ${i === 0 ? 'border-l-2' : ''} ${borderColor} ${isDark ? `bg-green-500/10 ${i === 0 ? 'border-l-green-400/60' : ''}` : `bg-green-50 ${i === 0 ? 'border-l-green-400' : ''}`}`}>{q}</th>
-                    ))}
-                    {['Q1', 'Q2', 'Q3', 'Q4'].map((q) => (
-                      <th key={`pg-${q}`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} ${isDark ? 'bg-green-500/15' : 'bg-green-100/70'} border-b ${borderColor}`}>{q}</th>
-                    ))}
+                    <th rowSpan={2} className={`text-[9px] text-right py-2 px-2 align-bottom border-b border-l ${borderColor} ${isDark ? 'bg-green-500/10 text-green-300' : 'bg-green-50 text-green-700'}`}>Total Projected</th>
+                    <th rowSpan={2} className={`text-[9px] text-right py-2 px-2 align-bottom border-b ${borderColor} ${isDark ? 'bg-green-500/10 text-green-300' : 'bg-green-50 text-green-700'}`}>Total GM</th>
+                  </tr>
+                  <tr>
+                    {billedMonths.flatMap((m, i) => [
+                      <th key={`bl-${m}-billed`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-orange-500/10 ${i === 0 ? 'border-l-orange-400/60' : ''}` : `bg-orange-50 ${i === 0 ? 'border-l-orange-400' : ''}`}`}>Billed</th>,
+                      <th key={`bl-${m}-gm`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} ${isDark ? 'bg-orange-500/10' : 'bg-orange-50'} border-b ${borderColor}`}>GM</th>,
+                    ])}
+                    {projectedMonths.flatMap((m, i) => [
+                      <th key={`pl-${m}-projected`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-green-500/10 ${i === 0 ? 'border-l-green-400/60' : ''}` : `bg-green-50 ${i === 0 ? 'border-l-green-400' : ''}`}`}>Projected</th>,
+                      <th key={`pl-${m}-gm`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} ${isDark ? 'bg-green-500/10' : 'bg-green-50'} border-b ${borderColor}`}>GM</th>,
+                    ])}
                   </tr>
                 </thead>
                 <tbody>
-                  {quarterlyClientData.length === 0 ? (
+                  {monthlyClientData.length === 0 ? (
                     <tr>
-                      <td colSpan={18} className={`text-center py-8 ${textMuted}`}>
+                      <td colSpan={billedMonths.length * 2 + projectedMonths.length * 2 + 4} className={`text-center py-8 ${textMuted}`}>
                         <div className="flex flex-col items-center gap-1.5">
                           <Users className="h-5 w-5 opacity-40" />
                           <span className="text-xs">No client data available</span>
@@ -1134,7 +1142,7 @@ export default function DashboardPage() {
                       </td>
                     </tr>
                   ) : (
-                    quarterlyClientData.map((client: any, idx: number) => {
+                    monthlyClientData.map((client: any, idx: number) => {
                       const rowBg = idx % 2 === 1 ? (isDark ? '#161a2b' : '#fafafa') : (isDark ? '#131726' : '#ffffff');
                       const fmt = (v: number) => (v ? formatCurrencyShort(v) : '–');
                       return (
@@ -1153,66 +1161,70 @@ export default function DashboardPage() {
                               <span className="truncate max-w-[130px]" title={client.client_name}>{client.client_name}</span>
                             </div>
                           </td>
-                          {(['Q1', 'Q2', 'Q3', 'Q4'] as const).map((q, i) => (
-                            <td key={`b-${q}`} className={`text-[10px] text-right py-1.5 px-2 ${textColor} ${i === 0 ? 'border-l-2' : ''} ${i === 0 ? (isDark ? 'border-l-orange-400/30' : 'border-l-orange-300') : ''} ${isDark ? 'bg-orange-500/5' : 'bg-orange-50/40'}`}>
-                              {fmt(client.billed[q])}
-                            </td>
-                          ))}
-                          {(['Q1', 'Q2', 'Q3', 'Q4'] as const).map((q) => (
-                            <td key={`bg-${q}`} className={`text-[10px] text-right py-1.5 px-2 font-medium ${client.billedGM[q] > 0 ? 'text-green-400' : client.billedGM[q] < 0 ? 'text-red-400' : textMuted} ${isDark ? 'bg-orange-500/10' : 'bg-orange-100/40'}`}>
-                              {fmt(client.billedGM[q])}
-                            </td>
-                          ))}
-                          {(['Q1', 'Q2', 'Q3', 'Q4'] as const).map((q, i) => (
-                            <td key={`p-${q}`} className={`text-[10px] text-right py-1.5 px-2 ${textColor} ${i === 0 ? 'border-l-2' : ''} ${i === 0 ? (isDark ? 'border-l-green-400/30' : 'border-l-green-300') : ''} ${isDark ? 'bg-green-500/5' : 'bg-green-50/40'}`}>
-                              {fmt(client.projected[q])}
-                            </td>
-                          ))}
-                          {(['Q1', 'Q2', 'Q3', 'Q4'] as const).map((q) => (
-                            <td key={`pg-${q}`} className={`text-[10px] text-right py-1.5 px-2 font-medium ${client.projectedGM[q] > 0 ? 'text-green-400' : client.projectedGM[q] < 0 ? 'text-red-400' : textMuted} ${isDark ? 'bg-green-500/10' : 'bg-green-100/40'}`}>
-                              {fmt(client.projectedGM[q])}
-                            </td>
-                          ))}
-                          <td className={`text-[10px] text-right py-1.5 px-2 font-semibold border-l-2 ${isDark ? 'border-l-blue-400/30 bg-blue-500/5' : 'border-l-blue-300 bg-blue-50/50'} ${textColor}`}>
+                          {billedMonths.flatMap((m, i) => [
+                            <td key={`b-${m}`} className={`text-[10px] text-right py-1.5 px-2 ${textColor} ${i === 0 ? 'border-l-2' : ''} ${i === 0 ? (isDark ? 'border-l-orange-400/30' : 'border-l-orange-300') : ''} ${isDark ? 'bg-orange-500/5' : 'bg-orange-50/40'}`}>
+                              {fmt(client.billed[m])}
+                            </td>,
+                            <td key={`bg-${m}`} className={`text-[10px] text-right py-1.5 px-2 font-medium ${client.billedGM[m] > 0 ? 'text-green-400' : client.billedGM[m] < 0 ? 'text-red-400' : textMuted} ${isDark ? 'bg-orange-500/5' : 'bg-orange-50/40'}`}>
+                              {fmt(client.billedGM[m])}
+                            </td>,
+                          ])}
+                          <td className={`text-[10px] text-right py-1.5 px-2 font-semibold border-l ${isDark ? 'bg-orange-500/10' : 'bg-orange-50'} ${textColor}`}>
                             {fmt(client.totalBilled)}
                           </td>
-                          <td className={`text-[10px] text-right py-1.5 px-2 font-semibold ${isDark ? 'bg-blue-500/5' : 'bg-blue-50/50'} ${client.totalGM > 0 ? 'text-green-400' : client.totalGM < 0 ? 'text-red-400' : textMuted}`}>
-                            {fmt(client.totalGM)}
+                          <td className={`text-[10px] text-right py-1.5 px-2 font-semibold ${isDark ? 'bg-orange-500/10' : 'bg-orange-50'} ${client.totalBilledGM > 0 ? 'text-green-400' : client.totalBilledGM < 0 ? 'text-red-400' : textMuted}`}>
+                            {fmt(client.totalBilledGM)}
+                          </td>
+                          {projectedMonths.flatMap((m, i) => [
+                            <td key={`p-${m}`} className={`text-[10px] text-right py-1.5 px-2 ${textColor} ${i === 0 ? 'border-l-2' : ''} ${i === 0 ? (isDark ? 'border-l-green-400/30' : 'border-l-green-300') : ''} ${isDark ? 'bg-green-500/5' : 'bg-green-50/40'}`}>
+                              {fmt(client.projected[m])}
+                            </td>,
+                            <td key={`pg-${m}`} className={`text-[10px] text-right py-1.5 px-2 font-medium ${client.projectedGM[m] > 0 ? 'text-green-400' : client.projectedGM[m] < 0 ? 'text-red-400' : textMuted} ${isDark ? 'bg-green-500/5' : 'bg-green-50/40'}`}>
+                              {fmt(client.projectedGM[m])}
+                            </td>,
+                          ])}
+                          <td className={`text-[10px] text-right py-1.5 px-2 font-semibold border-l ${isDark ? 'bg-green-500/10' : 'bg-green-50'} ${textColor}`}>
+                            {fmt(client.totalProjected)}
+                          </td>
+                          <td className={`text-[10px] text-right py-1.5 px-2 font-semibold ${isDark ? 'bg-green-500/10' : 'bg-green-50'} ${client.totalProjectedGM > 0 ? 'text-green-400' : client.totalProjectedGM < 0 ? 'text-red-400' : textMuted}`}>
+                            {fmt(client.totalProjectedGM)}
                           </td>
                         </tr>
                       );
                     })
                   )}
                 </tbody>
-                {quarterlyClientData.length > 0 && (
+                {monthlyClientData.length > 0 && (
                   <tfoot>
                     <tr className="sticky bottom-0 z-10 font-semibold">
                       <td className={`sticky left-0 z-10 text-[10px] py-2 pl-2 pr-3 border-r border-white/10 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'} text-white`}>Total</td>
-                      {(['Q1', 'Q2', 'Q3', 'Q4'] as const).map((q) => (
-                        <td key={`tb-${q}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                          {formatCurrencyShort(quarterlyTotals.billed[q])}
-                        </td>
-                      ))}
-                      {(['Q1', 'Q2', 'Q3', 'Q4'] as const).map((q) => (
-                        <td key={`tbg-${q}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                          {formatCurrencyShort(quarterlyTotals.billedGM[q])}
-                        </td>
-                      ))}
-                      {(['Q1', 'Q2', 'Q3', 'Q4'] as const).map((q) => (
-                        <td key={`tp-${q}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                          {formatCurrencyShort(quarterlyTotals.projected[q])}
-                        </td>
-                      ))}
-                      {(['Q1', 'Q2', 'Q3', 'Q4'] as const).map((q) => (
-                        <td key={`tpg-${q}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                          {formatCurrencyShort(quarterlyTotals.projectedGM[q])}
-                        </td>
-                      ))}
-                      <td className={`text-[10px] text-right py-2 px-2 text-blue-300 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                        {formatCurrencyShort(quarterlyTotals.totalBilled)}
+                      {billedMonths.flatMap((m) => [
+                        <td key={`tb-${m}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
+                          {formatCurrencyShort(monthlyTotals.billed[m])}
+                        </td>,
+                        <td key={`tbg-${m}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
+                          {formatCurrencyShort(monthlyTotals.billedGM[m])}
+                        </td>,
+                      ])}
+                      <td className={`text-[10px] text-right py-2 px-2 text-orange-300 border-l border-white/10 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
+                        {formatCurrencyShort(monthlyTotals.totalBilled)}
                       </td>
-                      <td className={`text-[10px] text-right py-2 px-2 text-blue-300 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                        {formatCurrencyShort(quarterlyTotals.totalGM)}
+                      <td className={`text-[10px] text-right py-2 px-2 text-orange-300 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
+                        {formatCurrencyShort(monthlyTotals.totalBilledGM)}
+                      </td>
+                      {projectedMonths.flatMap((m) => [
+                        <td key={`tp-${m}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
+                          {formatCurrencyShort(monthlyTotals.projected[m])}
+                        </td>,
+                        <td key={`tpg-${m}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
+                          {formatCurrencyShort(monthlyTotals.projectedGM[m])}
+                        </td>,
+                      ])}
+                      <td className={`text-[10px] text-right py-2 px-2 text-green-300 border-l border-white/10 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
+                        {formatCurrencyShort(monthlyTotals.totalProjected)}
+                      </td>
+                      <td className={`text-[10px] text-right py-2 px-2 text-green-300 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
+                        {formatCurrencyShort(monthlyTotals.totalProjectedGM)}
                       </td>
                     </tr>
                   </tfoot>

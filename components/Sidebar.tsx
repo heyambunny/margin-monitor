@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTheme } from '@/lib/providers/ThemeProvider';
 import { useAuth } from '@/lib/providers/AuthProvider';
+import { SessionTimer } from '@/components/SessionTimer';
 import { ROLE_PAGES, ROLE_NAMES } from '@/lib/roles';
 import {
   LayoutDashboard,
@@ -126,6 +127,8 @@ export function Sidebar({ onLogout }: SidebarProps) {
             <p className={`text-[10px] ${textMuted} truncate`}>{ROLE_NAMES[user?.role_id ?? 0] || 'User'}</p>
           </div>
         </div>
+
+        <SessionTimer isDark={isDark} />
 
         <div className="flex gap-1">
           <button

@@ -53,20 +53,16 @@ def get_reports(token: str = Depends(oauth2_scheme)):
             MAX(CASE WHEN ve.row_num = 5 THEN ve.amount END) AS vendor5amount,
 
             COALESCE(v_total.total_vendor,0) AS total_vendor,
-            COALESCE(cn.cn_amount,0) AS total_credit_note,
+            COALESCE(cn_total.total_cn,0) AS total_credit_note,
 
             (
                 b.client_billed_amount
                 - COALESCE(v_total.total_vendor,0)
-                - COALESCE(cn.cn_amount,0)
+                - COALESCE(cn_total.total_cn,0)
             ) AS gross_margin,
 
             b.status,
-            b.reason,
-
-            cn.credit_note_no,
-            cn.credit_note_date,
-            cn.cn_description
+            b.reason
 
         FROM billing_entries b
 
@@ -96,10 +92,17 @@ def get_reports(token: str = Depends(oauth2_scheme)):
             GROUP BY billing_entry_id
         ) v_total ON b.id = v_total.billing_entry_id
 
-        LEFT JOIN credit_notes cn ON b.id = cn.billing_entry_id
+        LEFT JOIN (
+            SELECT billing_entry_id, SUM(cn_amount) AS total_cn
+            FROM credit_notes
+            GROUP BY billing_entry_id
+        ) cn_total ON b.id = cn_total.billing_entry_id
         """
 
         params = []
+
+        # Exclude soft-deleted entries - matches /api/dashboard, /api/billed, etc.
+        query += " WHERE b.status != 'Deleted'"
 
         # ---------------- ACCESS CONTROL ----------------
         if role_id != 1:
@@ -112,7 +115,7 @@ def get_reports(token: str = Depends(oauth2_scheme)):
             if not client_ids:
                 return []
 
-            query += " WHERE b.client_id = ANY(%s)"
+            query += " AND b.client_id = ANY(%s)"
             params.append(client_ids)
 
         query += """
@@ -124,10 +127,7 @@ def get_reports(token: str = Depends(oauth2_scheme)):
             cat.category_name,
             u.name,
             v_total.total_vendor,
-            cn.cn_amount,
-            cn.credit_note_no,
-            cn.credit_note_date,
-            cn.cn_description
+            cn_total.total_cn
         ORDER BY b.id DESC
         """
 

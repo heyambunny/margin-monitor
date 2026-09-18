@@ -4,6 +4,8 @@ import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import { Sidebar } from '@/components/Sidebar';
+import { SessionManager } from '@/components/SessionManager';
+import { SessionProvider } from '@/lib/providers/SessionProvider';
 import { useTheme } from '@/lib/providers/ThemeProvider';
 import { isPageAllowed, getHomeForRole } from '@/lib/roles';
 
@@ -50,13 +52,16 @@ export default function DashboardLayout({
   const bgColor = isDark ? 'bg-[#0b0e1a]' : 'bg-gray-50';
 
   return (
-    <div className={`flex min-h-screen ${bgColor} transition-colors duration-300`}>
-      <Sidebar onLogout={logout} />
-      <main className="flex-1 ml-64 p-4">
-        <div className="max-w-7xl mx-auto">
-          {children}
-        </div>
-      </main>
-    </div>
+    <SessionProvider>
+      <div className={`flex min-h-screen ${bgColor} transition-colors duration-300`}>
+        <SessionManager />
+        <Sidebar onLogout={logout} />
+        <main className="flex-1 min-w-0 ml-64 p-4">
+          <div className="max-w-7xl mx-auto">
+            {children}
+          </div>
+        </main>
+      </div>
+    </SessionProvider>
   );
 }

@@ -242,7 +242,7 @@ export default function ConvertBillingPage() {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/convert-billing`, {
+      const response = await fetch(`${API_URL}/api/billing/convert/${selectedId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -336,7 +336,7 @@ export default function ConvertBillingPage() {
             <Building2 className="h-4 w-4 text-green-400" />
             <span className={`text-xs ${textMuted}`}>Clients</span>
           </div>
-          <p className={`text-base font-semibold ${textMain}`}>{clients.length}</p>
+          <p className={`text-base font-semibold ${textMain}`}>{new Set(filteredProjections.map((p) => p.client_name)).size}</p>
         </div>
         <div className={`p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${borderLight}`}>
           <div className="flex items-center gap-2">

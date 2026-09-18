@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useTheme } from '@/lib/providers/ThemeProvider';
-import { Eye, EyeOff, ArrowRight, TrendingUp, Sun, Moon, Mail, X } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, TrendingUp, Sun, Moon, Mail, X, ShieldAlert } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -15,9 +15,18 @@ export default function LoginPage() {
   const [showContactModal, setShowContactModal] = useState(false);
   const [contactEmail, setContactEmail] = useState('');
   const [contactMessage, setContactMessage] = useState('');
+  const [loggedOutReason, setLoggedOutReason] = useState('');
   const { login } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
+
+  useEffect(() => {
+    const reason = sessionStorage.getItem('logoutReason');
+    if (reason === 'inactivity') {
+      setLoggedOutReason('You were logged out due to inactivity. Please sign in again.');
+      sessionStorage.removeItem('logoutReason');
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,6 +101,13 @@ export default function LoginPage() {
           <div className={`${cardBg} ${cardBorder} border ${cardShadow} rounded-2xl p-8 transition-colors duration-300`}>
             <h1 className={`text-2xl font-bold ${textColor}`}>Welcome Back</h1>
             <p className={`text-sm ${textMuted} mt-1 mb-6`}>Sign in to your account</p>
+
+            {loggedOutReason && (
+              <div className="mb-4 flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-500 text-sm">
+                <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{loggedOutReason}</span>
+              </div>
+            )}
 
             {error && (
               <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">

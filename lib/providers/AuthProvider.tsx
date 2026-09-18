@@ -18,7 +18,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: (reason?: 'inactivity') => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -56,9 +56,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push(getHomeForRole(user.role_id));
   };
 
-  const logout = () => {
+  const logout = (reason?: 'inactivity') => {
     localStorage.removeItem('token');
     Cookies.remove('token');
+    // sessionStorage rather than a ?reason= query param: setUser(null) here
+    // also triggers the dashboard layout's own "no user -> /login" redirect,
+    // which races this push and would otherwise strip the query string.
+    if (reason) {
+      sessionStorage.setItem('logoutReason', reason);
+    }
     setUser(null);
     router.push('/login');
   };

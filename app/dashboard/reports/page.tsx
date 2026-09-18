@@ -22,12 +22,6 @@ export default function ReportsPage() {
   const [filterClient, setFilterClient] = useState('');
   const [filterType, setFilterType] = useState('');
   const [clients, setClients] = useState<string[]>([]);
-  const [stats, setStats] = useState({
-    totalRevenue: 0,
-    totalMargin: 0,
-    avgMargin: 0,
-    totalRecords: 0,
-  });
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
@@ -77,18 +71,6 @@ export default function ReportsPage() {
       
       const uniqueClients = [...new Set(reportsData.map((r: any) => r.client_name).filter(Boolean))];
       setClients(uniqueClients);
-      
-      // Calculate stats
-      const totalRevenue = reportsData.reduce((sum: number, r: any) => sum + (r.client_billed_amount || 0), 0);
-      const totalMargin = reportsData.reduce((sum: number, r: any) => sum + (r.gross_margin || 0), 0);
-      const avgMargin = reportsData.length > 0 ? (totalMargin / reportsData.length) : 0;
-      
-      setStats({
-        totalRevenue,
-        totalMargin,
-        avgMargin,
-        totalRecords: reportsData.length,
-      });
     } catch (error) {
       console.error('Error fetching data:', error);
       setError('Failed to load data');
@@ -204,6 +186,9 @@ export default function ReportsPage() {
     );
   }
 
+  const totalRevenue = filteredReports.reduce((sum, r) => sum + (r.client_billed_amount || 0), 0);
+  const totalMargin = filteredReports.reduce((sum, r) => sum + (r.gross_margin || 0), 0);
+
   return (
     <div className="max-w-7xl mx-auto">
       {/* Header */}
@@ -235,14 +220,14 @@ export default function ReportsPage() {
             <DollarSign className="h-4 w-4 text-blue-400" />
             <span className={`text-xs ${textMuted}`}>Revenue</span>
           </div>
-          <p className={`text-base font-semibold ${textMain}`}>{formatCurrency(stats.totalRevenue)}</p>
+          <p className={`text-base font-semibold ${textMain}`}>{formatCurrency(totalRevenue)}</p>
         </div>
         <div className={`p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${borderLight}`}>
           <div className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-green-400" />
             <span className={`text-xs ${textMuted}`}>Margin</span>
           </div>
-          <p className={`text-base font-semibold ${textMain}`}>{formatCurrency(stats.totalMargin)}</p>
+          <p className={`text-base font-semibold ${textMain}`}>{formatCurrency(totalMargin)}</p>
         </div>
         <div className={`p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${borderLight}`}>
           <div className="flex items-center gap-2">
@@ -250,7 +235,7 @@ export default function ReportsPage() {
             <span className={`text-xs ${textMuted}`}>Avg Margin</span>
           </div>
           <p className={`text-base font-semibold ${textMain}`}>
-            {stats.totalRevenue > 0 ? ((stats.totalMargin / stats.totalRevenue) * 100).toFixed(1) : 0}%
+            {totalRevenue > 0 ? ((totalMargin / totalRevenue) * 100).toFixed(1) : 0}%
           </p>
         </div>
         <div className={`p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${borderLight}`}>
@@ -258,7 +243,7 @@ export default function ReportsPage() {
             <FileText className="h-4 w-4 text-yellow-400" />
             <span className={`text-xs ${textMuted}`}>Records</span>
           </div>
-          <p className={`text-base font-semibold ${textMain}`}>{stats.totalRecords}</p>
+          <p className={`text-base font-semibold ${textMain}`}>{filteredReports.length}</p>
         </div>
       </div>
 
