@@ -5,8 +5,48 @@ from backend.db import get_connection, release_connection, get_user_client_ids
 from backend.auth.jwt_handler import require_roles
 from utils.audit import log_audit
 from datetime import datetime
+import psycopg2
+import random
 
 router = APIRouter()
+
+CULPRIT_TAGLINES = [
+    "Case cracked!",
+    "Mystery solved!",
+    "Gotcha!",
+    "Busted!",
+    "We found the culprit!",
+]
+
+def duplicate_invoice_message(cursor, invoice_no: str) -> str:
+    """A given invoice number is unique across all billing entries. When a
+    conversion collides with one already in use, name and shame whoever got
+    there first instead of surfacing the raw Postgres constraint error."""
+    cursor.execute("""
+        SELECT c.client_name, p.program_name, u.name
+        FROM billing_entries b
+        JOIN clients c ON b.client_id = c.id
+        JOIN programs p ON b.program_id = p.id
+        LEFT JOIN users u ON b.created_by_user_id = u.id
+        WHERE b.invoice_no = %s
+        LIMIT 1
+    """, (invoice_no,))
+    row = cursor.fetchone()
+    tagline = random.choice(CULPRIT_TAGLINES)
+
+    if not row:
+        return f'Invoice number "{invoice_no}" is already taken. Pick a different one.'
+
+    client_name, program_name, user_name = row
+    if user_name:
+        return (
+            f'{tagline} {user_name} already billed invoice "{invoice_no}" '
+            f'on the {program_name} program for {client_name}. Pick a different invoice number.'
+        )
+    return (
+        f'{tagline} Invoice "{invoice_no}" is already billed on the {program_name} '
+        f'program for {client_name}. Pick a different invoice number.'
+    )
 
 class ConvertBillingRequest(BaseModel):
     projection_id: int
@@ -47,24 +87,29 @@ async def convert_to_billing(projection_id: int, data: ConvertBillingRequest, us
                 raise HTTPException(status_code=403, detail="You do not have access to this client")
 
         # Update the projection to Billed status
-        cursor.execute("""
-            UPDATE billing_entries 
-            SET 
-                status = 'Billed',
-                funnel_number = %s,
-                invoice_no = %s,
-                invoice_date = %s,
-                client_billed_amount = %s
-            WHERE id = %s
-            RETURNING id
-        """, (
-            data.funnel_number,
-            data.invoice_no,
-            data.invoice_date,
-            data.amount,
-            projection_id
-        ))
-        
+        try:
+            cursor.execute("""
+                UPDATE billing_entries
+                SET
+                    status = 'Billed',
+                    funnel_number = %s,
+                    invoice_no = %s,
+                    invoice_date = %s,
+                    client_billed_amount = %s
+                WHERE id = %s
+                RETURNING id
+            """, (
+                data.funnel_number,
+                data.invoice_no,
+                data.invoice_date,
+                data.amount,
+                projection_id
+            ))
+        except psycopg2.errors.UniqueViolation:
+            conn.rollback()
+            cursor = conn.cursor()
+            raise HTTPException(status_code=400, detail=duplicate_invoice_message(cursor, data.invoice_no))
+
         updated_id = cursor.fetchone()
         if not updated_id:
             raise HTTPException(status_code=400, detail="Failed to update projection")

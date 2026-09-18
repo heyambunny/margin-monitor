@@ -54,8 +54,8 @@ async def create_projection(data: ProjectionRequest, user: dict = Depends(requir
 
         cursor.execute("""
             INSERT INTO billing_entries
-            (client_id, program_id, expense_type_id, category_id, invoice_description, client_billed_amount, invoice_month, financial_year, projection_date, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_DATE, 'Active')
+            (client_id, program_id, expense_type_id, category_id, invoice_description, client_billed_amount, invoice_month, financial_year, projection_date, status, created_by_user_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_DATE, 'Active', %s)
             RETURNING id
         """, (
             data.client_id,
@@ -65,7 +65,8 @@ async def create_projection(data: ProjectionRequest, user: dict = Depends(requir
             data.description,
             data.amount,
             data.invoice_month,
-            data.financial_year
+            data.financial_year,
+            user["user_id"]
         ))
 
         billing_id = cursor.fetchone()[0]
