@@ -3,34 +3,13 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { useTheme } from '@/lib/providers/ThemeProvider';
-import {
-  DollarSign, Receipt, Clock, AlertTriangle, RefreshCw,
-  Filter, X, Download, CheckCircle2, Building2,
-} from 'lucide-react';
-
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { AnimatedNumber } from '@/components/ui/animated-number';
+import { IndianRupee, Receipt, Clock, AlertTriangle, Download, CheckCircle2, Wallet } from 'lucide-react';
 import { API_URL } from '@/lib/api';
-
-// Minimal blue shades for avatars - matches the rest of the app
-const BLUE_SHADES = ['#3b82f6', '#60a5fa', '#93c5fd', '#2563eb', '#1d4ed8', '#bfdbfe', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0284c7'];
+import {
+  useUi, PageHeader, RefreshButton, StatGrid, FilterBar, FilterSelect, ClearFiltersButton, Card,
+  TableShell, THead, Th, Tr, TdAccent, EmptyRow, EmptyState, Pagination, EntityCell, Chip, Badge, Avatar,
+  PageSkeleton, type BadgeTone,
+} from '@/components/app/ui';
 
 const MONTH_ABBR: Record<string, number> = {
   Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
@@ -56,23 +35,22 @@ function getAgingBucket(year: number, month: number, currentYear: number, curren
   return '2+ Months Overdue';
 }
 
-const agingBadgeClass = (bucket: string, isDark: boolean) => {
-  if (bucket === 'Current') return isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-100 text-green-700';
-  if (bucket === '1 Month Overdue') return isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-100 text-amber-700';
-  return isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-100 text-red-700';
+const AGING_TONE: Record<string, BadgeTone> = {
+  Current: 'green',
+  '1 Month Overdue': 'amber',
+  '2+ Months Overdue': 'red',
 };
 
-const agingRowTint = (bucket: string, isDark: boolean) => {
-  if (bucket === 'Current') return isDark ? 'bg-green-500/[0.04]' : 'bg-green-50/50';
-  if (bucket === '1 Month Overdue') return isDark ? 'bg-amber-500/[0.04]' : 'bg-amber-50/50';
-  return isDark ? 'bg-red-500/[0.04]' : 'bg-red-50/50';
+const AGING_ACCENT: Record<string, string> = {
+  Current: 'from-emerald-500/20',
+  '1 Month Overdue': 'from-amber-500/20',
+  '2+ Months Overdue': 'from-red-500/20',
 };
 
 export default function FinancePage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
+  const ui = useUi();
 
   const [records, setRecords] = useState<any[]>([]);
   const [isFetching, setIsFetching] = useState(true);
@@ -81,6 +59,8 @@ export default function FinancePage() {
   const [clientFilter, setClientFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [agingFilter, setAgingFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     if (!loading && !user) {
@@ -93,6 +73,10 @@ export default function FinancePage() {
       fetchData();
     }
   }, [user]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [clientFilter, categoryFilter, agingFilter]);
 
   const fetchData = async () => {
     setIsFetching(true);
@@ -120,32 +104,23 @@ export default function FinancePage() {
     if (!value) return '₹0';
     if (value >= 10000000) return `₹${(value / 10000000).toFixed(2)}Cr`;
     if (value >= 100000) return `₹${(value / 100000).toFixed(2)}L`;
-    return `₹${value.toLocaleString()}`;
+    return `₹${Math.round(value).toLocaleString('en-IN')}`;
   };
 
-  const bgColor = isDark ? 'bg-[#0b0e1a]' : 'bg-gray-50';
-  const cardBg = isDark ? 'bg-[#131726]' : 'bg-white';
-  const borderColor = isDark ? 'border-white/5' : 'border-gray-200';
-  const textColor = isDark ? 'text-white' : 'text-gray-900';
-  const textMuted = isDark ? 'text-gray-400' : 'text-gray-500';
-  const hoverBg = isDark ? 'hover:bg-white/5' : 'hover:bg-muted/50';
-
-  if (loading || isFetching) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
-      </div>
-    );
+  if (loading || (isFetching && records.length === 0 && !error)) {
+    return <PageSkeleton />;
   }
 
   if (error) {
     return (
-      <div className="p-6 text-center">
-        <p className={textMuted}>{error}</p>
-        <Button onClick={fetchData} variant="outline" className="mt-4">
-          Retry
-        </Button>
-      </div>
+      <Card className="p-10">
+        <EmptyState
+          icon={AlertTriangle}
+          title="Couldn't load finance data"
+          hint={error}
+          action={<button onClick={fetchData} className="mt-1 text-xs text-blue-400 hover:underline">Try again</button>}
+        />
+      </Card>
     );
   }
 
@@ -232,284 +207,198 @@ export default function FinancePage() {
     URL.revokeObjectURL(url);
   };
 
+  const totalPages = Math.ceil(detailRows.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const pageRows = detailRows.slice(startIndex, endIndex);
+  const toggle = (current: string, value: string, set: (v: string) => void) => set(current === value ? 'all' : value);
+
   return (
-    <div className={`min-h-screen ${bgColor} transition-colors duration-300`}>
-      <div className="max-w-7xl mx-auto p-4 space-y-4">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h1 className={`text-lg font-semibold ${textColor}`}>Finance Dashboard</h1>
-            <p className={`text-xs ${textMuted}`}>Pending billing overview · Active accounts not yet billed</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={`text-[10px] ${textMuted}`}>As of {today.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={fetchData}
-              className={`h-8 w-8 p-0 ${cardBg} ${borderColor} border`}
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${textMuted}`} />
-            </Button>
-          </div>
-        </div>
-
-        {pending.length === 0 ? (
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardContent className="p-10 flex flex-col items-center gap-2">
-              <CheckCircle2 className="h-8 w-8 text-green-500" />
-              <p className={`text-sm font-medium ${textColor}`}>No pending billing 🎉</p>
-              <p className={`text-xs ${textMuted}`}>Everything due has been billed.</p>
-            </CardContent>
-          </Card>
-        ) : (
+    <div className="max-w-7xl mx-auto">
+      <PageHeader
+        icon={Wallet}
+        title="Finance Dashboard"
+        subtitle={`Pending billing · active projections not yet billed · as of ${today.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+        gradient="from-emerald-500 to-cyan-500"
+        actions={
           <>
-            {/* Filters */}
-            <Card className={`${cardBg} ${borderColor} border`}>
-              <CardContent className="p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`flex items-center gap-1 text-[10px] font-medium ${textMuted}`}>
-                    <Filter className="h-3 w-3" /> Filters
-                  </span>
-                  <Select value={clientFilter} onValueChange={setClientFilter}>
-                    <SelectTrigger className={`w-[150px] h-7 text-xs ${cardBg} ${borderColor} border`}>
-                      <SelectValue placeholder="Client" />
-                    </SelectTrigger>
-                    <SelectContent className={cardBg}>
-                      <SelectItem value="all" className="text-xs">All Clients</SelectItem>
-                      {uniqueClients.map((c) => (
-                        <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger className={`w-[150px] h-7 text-xs ${cardBg} ${borderColor} border`}>
-                      <SelectValue placeholder="Category" />
-                    </SelectTrigger>
-                    <SelectContent className={cardBg}>
-                      <SelectItem value="all" className="text-xs">All Categories</SelectItem>
-                      {uniqueCategories.map((c) => (
-                        <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={agingFilter} onValueChange={setAgingFilter}>
-                    <SelectTrigger className={`w-[150px] h-7 text-xs ${cardBg} ${borderColor} border`}>
-                      <SelectValue placeholder="Aging Bucket" />
-                    </SelectTrigger>
-                    <SelectContent className={cardBg}>
-                      <SelectItem value="all" className="text-xs">All Buckets</SelectItem>
-                      {AGING_ORDER.map((b) => (
-                        <SelectItem key={b} value={b} className="text-xs">{b}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {hasActiveFilters && (
-                    <button
-                      onClick={clearFilters}
-                      className={`flex items-center gap-1 text-[10px] ${textMuted} hover:text-red-400 transition-colors`}
-                    >
-                      <X className="h-3 w-3" /> Clear
-                    </button>
-                  )}
-                  <div className="ml-auto">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={downloadCsv}
-                      disabled={detailRows.length === 0}
-                      className={`h-7 text-[10px] gap-1 ${cardBg} ${borderColor} border`}
-                    >
-                      <Download className="h-3 w-3" /> Export CSV
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {filtered.length === 0 ? (
-              <Card className={`${cardBg} ${borderColor} border`}>
-                <CardContent className="p-8 text-center">
-                  <p className={`text-sm ${textMuted}`}>No records match the selected filters.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <>
-                {/* KPI Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <Card className={`${cardBg} ${borderColor} border`}>
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <div className="p-1 bg-blue-500/10 rounded"><DollarSign className="h-3 w-3 text-blue-500" /></div>
-                        <span className={textMuted}>Total Pending</span>
-                      </div>
-                      <p className={`text-base font-bold ${textColor} mt-1`}>
-                        <AnimatedNumber value={totalAmount} duration={1000} format={(val) => formatCurrency(val)} />
-                      </p>
-                    </CardContent>
-                  </Card>
-                  <Card className={`${cardBg} ${borderColor} border`}>
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <div className="p-1 bg-indigo-500/10 rounded"><Receipt className="h-3 w-3 text-indigo-500" /></div>
-                        <span className={textMuted}>Total Bills</span>
-                      </div>
-                      <p className={`text-base font-bold ${textColor} mt-1`}>
-                        <AnimatedNumber value={totalBills} duration={800} />
-                      </p>
-                    </CardContent>
-                  </Card>
-                  <Card className={`${cardBg} ${borderColor} border`}>
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <div className="p-1 bg-green-500/10 rounded"><Clock className="h-3 w-3 text-green-500" /></div>
-                        <span className={textMuted}>Current</span>
-                      </div>
-                      <p className="text-base font-bold text-green-500 mt-1">
-                        <AnimatedNumber value={currentAmount} duration={1000} format={(val) => formatCurrency(val)} />
-                      </p>
-                    </CardContent>
-                  </Card>
-                  <Card className={`${cardBg} ${borderColor} border`}>
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <div className="p-1 bg-red-500/10 rounded"><AlertTriangle className="h-3 w-3 text-red-500" /></div>
-                        <span className={textMuted}>Overdue</span>
-                      </div>
-                      <p className="text-base font-bold text-red-500 mt-1">
-                        <AnimatedNumber value={overdueAmount} duration={1000} format={(val) => formatCurrency(val)} />
-                      </p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Client Summary & Aging Summary */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                  <Card className={`lg:col-span-2 ${cardBg} ${borderColor} border`}>
-                    <CardHeader className="p-3 pb-1">
-                      <CardTitle className={`text-xs font-medium ${textColor}`}>Client-wise Pending Summary</CardTitle>
-                      <CardDescription className={`text-[10px] ${textMuted}`}>Sorted by pending amount</CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-3 pt-0">
-                      <div className="max-h-[280px] overflow-y-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className={`border-b ${borderColor} hover:bg-transparent`}>
-                              <TableHead className={`text-[9px] py-1.5 ${textMuted}`}>Client</TableHead>
-                              <TableHead className={`text-[9px] text-right py-1.5 ${textMuted}`}>Pending Amount</TableHead>
-                              <TableHead className={`text-[9px] text-right py-1.5 ${textMuted}`}>Bills</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {clientSummary.map((c, idx) => (
-                              <TableRow key={c.client_name} className={`${hoverBg} transition-colors border-b ${borderColor}`}>
-                                <TableCell className={`text-[10px] py-1.5 ${textColor}`}>
-                                  <div className="flex items-center gap-1.5">
-                                    <div
-                                      className="flex items-center justify-center w-5 h-5 rounded-full text-[8px] font-bold text-white shrink-0"
-                                      style={{ backgroundColor: BLUE_SHADES[idx % BLUE_SHADES.length] }}
-                                    >
-                                      {c.client_name.charAt(0).toUpperCase()}
-                                    </div>
-                                    <span className="truncate max-w-[160px]" title={c.client_name}>{c.client_name}</span>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="relative text-right py-1.5">
-                                  <div
-                                    className={`absolute inset-y-1 right-0 rounded-l ${isDark ? 'bg-blue-500/10' : 'bg-blue-100/70'}`}
-                                    style={{ width: `${Math.min((c.amount / maxClientAmount) * 100, 100)}%` }}
-                                  />
-                                  <span className={`relative text-[10px] font-medium pr-1 ${textColor}`}>{formatCurrency(c.amount)}</span>
-                                </TableCell>
-                                <TableCell className={`text-[10px] text-right py-1.5 ${textMuted}`}>{c.bills}</TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className={`${cardBg} ${borderColor} border`}>
-                    <CardHeader className="p-3 pb-1">
-                      <CardTitle className={`text-xs font-medium ${textColor}`}>Aging Summary</CardTitle>
-                      <CardDescription className={`text-[10px] ${textMuted}`}>Current vs. overdue</CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-3 pt-0 space-y-2">
-                      {agingSummary.map((a) => (
-                        <div key={a.bucket} className={`p-2.5 rounded-lg border ${borderColor} ${agingRowTint(a.bucket, isDark)}`}>
-                          <div className="flex items-center justify-between">
-                            <span className={`inline-block px-1.5 py-0.5 rounded-full text-[9px] font-semibold ${agingBadgeClass(a.bucket, isDark)}`}>
-                              {a.bucket}
-                            </span>
-                            <span className={`text-[9px] ${textMuted}`}>{a.bills} bills</span>
-                          </div>
-                          <p className={`text-sm font-bold ${textColor} mt-1`}>{formatCurrency(a.amount)}</p>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Detail Table */}
-                <Card className={`${cardBg} ${borderColor} border`}>
-                  <CardHeader className="p-3 pb-1">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className={`text-xs font-medium ${textColor}`}>Pending Billing Details</CardTitle>
-                        <CardDescription className={`text-[10px] ${textMuted}`}>{detailRows.length} {detailRows.length === 1 ? 'record' : 'records'}</CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-3 pt-0">
-                    <div className="max-h-[400px] overflow-y-auto rounded-lg">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className={`sticky top-0 z-10 ${isDark ? 'bg-[#171b2c]' : 'bg-gray-50'} border-b ${borderColor} hover:bg-transparent`}>
-                            <TableHead className={`text-[9px] uppercase tracking-wide py-2 ${textMuted}`}>Client</TableHead>
-                            <TableHead className={`text-[9px] uppercase tracking-wide py-2 ${textMuted}`}>Program</TableHead>
-                            <TableHead className={`text-[9px] uppercase tracking-wide py-2 ${textMuted}`}>Category</TableHead>
-                            <TableHead className={`text-[9px] uppercase tracking-wide text-right py-2 ${textMuted}`}>Amount</TableHead>
-                            <TableHead className={`text-[9px] uppercase tracking-wide text-center py-2 ${textMuted}`}>Month</TableHead>
-                            <TableHead className={`text-[9px] uppercase tracking-wide text-right py-2 pr-2 ${textMuted}`}>Aging</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {detailRows.map((r: any, idx: number) => (
-                            <TableRow key={r.id ?? idx} className={`border-b ${borderColor} ${agingRowTint(r.aging_bucket, isDark)} hover:${isDark ? 'bg-white/5' : 'bg-blue-50/60'} transition-colors`}>
-                              <TableCell className={`text-[10px] py-1.5 ${textColor}`}>
-                                <div className="flex items-center gap-1.5">
-                                  <Building2 className={`h-3 w-3 shrink-0 ${textMuted}`} />
-                                  <span className="truncate max-w-[140px]" title={r.client_name}>{r.client_name}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className={`text-[10px] py-1.5 ${textMuted}`}>
-                                <span className="truncate max-w-[120px] inline-block" title={r.program_name}>{r.program_name}</span>
-                              </TableCell>
-                              <TableCell className={`text-[10px] py-1.5 ${textMuted}`}>
-                                <span className="truncate max-w-[120px] inline-block" title={r.category_name}>{r.category_name}</span>
-                              </TableCell>
-                              <TableCell className={`text-[10px] text-right py-1.5 font-medium ${textColor}`}>
-                                {formatCurrency(r.client_billed_amount)}
-                              </TableCell>
-                              <TableCell className={`text-[10px] text-center py-1.5 ${textMuted}`}>{r.invoice_month}</TableCell>
-                              <TableCell className="text-right py-1.5 pr-2">
-                                <span className={`inline-block px-1.5 py-0.5 rounded-full text-[9px] font-semibold ${agingBadgeClass(r.aging_bucket, isDark)}`}>
-                                  {r.aging_bucket}
-                                </span>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
-              </>
-            )}
+            <RefreshButton onClick={fetchData} loading={isFetching} />
+            <button
+              onClick={downloadCsv}
+              disabled={detailRows.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg shadow-blue-500/20 hover:from-blue-600 hover:to-purple-600 active:scale-[0.98] transition disabled:opacity-40 disabled:shadow-none"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </button>
           </>
-        )}
-      </div>
+        }
+      />
+
+      {pending.length === 0 ? (
+        <Card className="p-12">
+          <EmptyState icon={CheckCircle2} title="No pending billing 🎉" hint="Everything due has been billed." />
+        </Card>
+      ) : (
+        <>
+          <StatGrid
+            stats={[
+              { label: 'Total Pending', value: totalAmount, icon: IndianRupee, color: 'blue', money: true },
+              { label: 'Pending Bills', value: totalBills, icon: Receipt, color: 'purple' },
+              { label: 'Current', value: currentAmount, icon: Clock, color: 'emerald', money: true },
+              { label: 'Overdue', value: overdueAmount, icon: AlertTriangle, color: 'rose', money: true },
+            ]}
+          />
+
+          <FilterBar>
+            <FilterSelect value={clientFilter} onChange={setClientFilter}>
+              <option value="all">All Clients</option>
+              {uniqueClients.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </FilterSelect>
+            <FilterSelect value={categoryFilter} onChange={setCategoryFilter}>
+              <option value="all">All Categories</option>
+              {uniqueCategories.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </FilterSelect>
+            <FilterSelect value={agingFilter} onChange={setAgingFilter}>
+              <option value="all">All Aging Buckets</option>
+              {AGING_ORDER.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </FilterSelect>
+            <ClearFiltersButton show={hasActiveFilters} onClick={clearFilters} />
+            <span className={`ml-auto text-[11px] ${ui.muted} hidden md:block`}>Tip: click a client or aging bucket to filter</span>
+          </FilterBar>
+
+          {filtered.length === 0 ? (
+            <Card className="p-10">
+              <EmptyState
+                title="No records match the selected filters"
+                action={<button onClick={clearFilters} className="text-xs text-blue-400 hover:underline">Clear filters</button>}
+              />
+            </Card>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+                {/* Client summary */}
+                <Card className="lg:col-span-2 p-4">
+                  <div className="flex items-baseline justify-between mb-3">
+                    <h2 className={`text-sm font-semibold ${ui.text}`}>Pending by Client</h2>
+                    <span className={`text-[11px] ${ui.muted}`}>{clientSummary.length} clients · sorted by amount</span>
+                  </div>
+                  <div className="max-h-[300px] overflow-y-auto pr-1 space-y-1" style={ui.colorScheme}>
+                    {clientSummary.map((c, idx) => {
+                      const active = clientFilter === c.client_name;
+                      return (
+                        <button
+                          key={c.client_name}
+                          onClick={() => toggle(clientFilter, c.client_name, setClientFilter)}
+                          className={`w-full relative flex items-center gap-3 px-2.5 py-2 rounded-lg text-left transition overflow-hidden animate-in fade-in slide-in-from-left-1 fill-mode-both ${
+                            active ? 'ring-1 ring-blue-500/60 bg-blue-500/10' : ui.hoverRow
+                          }`}
+                          style={{ animationDelay: `${Math.min(idx, 12) * 30}ms` }}
+                        >
+                          <div
+                            className={`absolute inset-y-0 left-0 ${ui.isDark ? 'bg-blue-500/10' : 'bg-blue-100/70'} transition-all duration-700`}
+                            style={{ width: `${Math.min((c.amount / maxClientAmount) * 100, 100)}%` }}
+                          />
+                          <div className="relative"><Avatar name={c.client_name} size="sm" /></div>
+                          <span className={`relative flex-1 min-w-0 text-sm ${ui.text} truncate`} title={c.client_name}>{c.client_name}</span>
+                          <span className={`relative text-[11px] ${ui.muted} whitespace-nowrap`}>{c.bills} {c.bills === 1 ? 'bill' : 'bills'}</span>
+                          <span className={`relative text-sm font-semibold ${ui.text} tabular-nums w-24 text-right`}>{formatCurrency(c.amount)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Card>
+
+                {/* Aging summary */}
+                <Card className="p-4">
+                  <div className="flex items-baseline justify-between mb-3">
+                    <h2 className={`text-sm font-semibold ${ui.text}`}>Aging</h2>
+                    <span className={`text-[11px] ${ui.muted}`}>Current vs overdue</span>
+                  </div>
+                  <div className="space-y-2">
+                    {agingSummary.map((a, idx) => {
+                      const active = agingFilter === a.bucket;
+                      const share = totalAmount > 0 ? (a.amount / totalAmount) * 100 : 0;
+                      return (
+                        <button
+                          key={a.bucket}
+                          onClick={() => toggle(agingFilter, a.bucket, setAgingFilter)}
+                          className={`relative w-full overflow-hidden text-left p-3 rounded-xl border ${ui.border} transition hover:-translate-y-0.5 animate-in fade-in slide-in-from-right-1 fill-mode-both ${
+                            active ? 'ring-1 ring-blue-500/60' : ''
+                          }`}
+                          style={{ animationDelay: `${idx * 60}ms` }}
+                        >
+                          <div className={`absolute inset-0 bg-gradient-to-br ${AGING_ACCENT[a.bucket]} to-transparent pointer-events-none`} />
+                          <div className="relative flex items-center justify-between">
+                            <Badge tone={AGING_TONE[a.bucket]} dot>{a.bucket}</Badge>
+                            <span className={`text-[11px] ${ui.muted}`}>{a.bills} bills</span>
+                          </div>
+                          <div className="relative flex items-end justify-between mt-2">
+                            <p className={`text-lg font-bold ${ui.text} tabular-nums`}>{formatCurrency(a.amount)}</p>
+                            <span className={`text-[11px] ${ui.muted}`}>{share.toFixed(0)}%</span>
+                          </div>
+                          <div className={`relative mt-2 h-1 rounded-full ${ui.isDark ? 'bg-white/10' : 'bg-gray-200'} overflow-hidden`}>
+                            <div
+                              className={`h-full rounded-full transition-all duration-700 ${
+                                a.bucket === 'Current' ? 'bg-emerald-500' : a.bucket === '1 Month Overdue' ? 'bg-amber-500' : 'bg-red-500'
+                              }`}
+                              style={{ width: `${share}%` }}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Card>
+              </div>
+
+              <div className="flex items-baseline justify-between mb-2 px-1">
+                <h2 className={`text-sm font-semibold ${ui.text}`}>Pending Billing Details</h2>
+                <span className={`text-[11px] ${ui.muted}`}>{detailRows.length} {detailRows.length === 1 ? 'record' : 'records'} · largest first</span>
+              </div>
+              <TableShell
+                footer={
+                  <Pagination
+                    currentPage={currentPage} totalPages={totalPages} startIndex={startIndex} endIndex={endIndex}
+                    total={detailRows.length} onPage={setCurrentPage}
+                  />
+                }
+              >
+                <THead>
+                  <Th>ID</Th>
+                  <Th>Client / Program</Th>
+                  <Th>Category</Th>
+                  <Th>Month</Th>
+                  <Th>Aging</Th>
+                  <Th align="right">Amount</Th>
+                </THead>
+                <tbody>
+                  {pageRows.length === 0 ? (
+                    <EmptyRow colSpan={6} title="No records" />
+                  ) : (
+                    pageRows.map((r: any, idx: number) => (
+                      <Tr key={r.id ?? idx} index={idx}>
+                        <TdAccent className={`text-xs font-mono ${ui.textSoft}`}>#{r.id}</TdAccent>
+                        <td className="px-4 py-3"><EntityCell name={r.client_name} sub={r.program_name} /></td>
+                        <td className={`px-4 py-3 text-xs ${ui.textSoft} whitespace-nowrap`}>{r.category_name || '-'}</td>
+                        <td className="px-4 py-3">{r.invoice_month ? <Chip>{r.invoice_month}</Chip> : '-'}</td>
+                        <td className="px-4 py-3"><Badge tone={AGING_TONE[r.aging_bucket] || 'gray'} dot>{r.aging_bucket}</Badge></td>
+                        <td className={`px-4 py-3 text-right text-sm font-semibold ${ui.text} whitespace-nowrap tabular-nums`}>{formatCurrency(r.client_billed_amount)}</td>
+                      </Tr>
+                    ))
+                  )}
+                </tbody>
+              </TableShell>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

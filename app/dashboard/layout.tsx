@@ -2,12 +2,13 @@
 
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Sidebar } from '@/components/Sidebar';
 import { SessionManager } from '@/components/SessionManager';
 import { SessionProvider } from '@/lib/providers/SessionProvider';
 import { useTheme } from '@/lib/providers/ThemeProvider';
 import { isPageAllowed, getHomeForRole } from '@/lib/roles';
+import { Toaster } from 'react-hot-toast';
 
 export default function DashboardLayout({
   children,
@@ -19,6 +20,20 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+
+  // Sidebar collapsed state is remembered per browser.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem('sidebarCollapsed') === '1');
+    } catch {}
+  }, []);
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((c) => {
+      try { localStorage.setItem('sidebarCollapsed', c ? '0' : '1'); } catch {}
+      return !c;
+    });
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -55,8 +70,16 @@ export default function DashboardLayout({
     <SessionProvider>
       <div className={`flex min-h-screen ${bgColor} transition-colors duration-300`}>
         <SessionManager />
-        <Sidebar onLogout={logout} />
-        <main className="flex-1 min-w-0 ml-64 p-4">
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            style: isDark
+              ? { background: '#1b2033', color: '#fff', border: '1px solid rgba(255,255,255,0.08)', fontSize: 13 }
+              : { fontSize: 13 },
+          }}
+        />
+        <Sidebar onLogout={logout} collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
+        <main className={`flex-1 min-w-0 ${collapsed ? 'ml-[72px]' : 'ml-64'} p-4 transition-[margin] duration-300 ease-out`}>
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

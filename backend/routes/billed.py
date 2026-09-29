@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from backend.db import get_connection, release_connection
-from backend.auth.jwt_handler import get_current_user
+from backend.auth.jwt_handler import get_current_user, require_admin
+from utils.audit import log_audit
 
 router = APIRouter()
 
@@ -71,5 +72,78 @@ async def get_billed_invoices(user: dict = Depends(get_current_user)):
     except Exception as e:
         print(f"Error fetching billed invoices: {e}")
         return []
+    finally:
+        release_connection(conn)
+
+
+# Undo a billing: Admin only. Puts the entry back to projected so it shows
+# up in Convert to Billing again, and frees its invoice number. "Billed" is
+# recorded in two places - status 'Billed' (Convert to Billing) and expense
+# type 'Billed' (older entries) - so both are reset. The billed amount and
+# vendor expenses are kept as they are.
+@router.post("/billed/{entry_id}/unbill")
+async def unbill_invoice(entry_id: int, user: dict = Depends(require_admin)):
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT status, invoice_no, invoice_date, funnel_number, expense_type_id
+            FROM billing_entries
+            WHERE id = %s
+              AND invoice_no IS NOT NULL
+              AND invoice_no != ''
+              AND status != 'Deleted'
+            FOR UPDATE
+        """, (entry_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Billed invoice not found")
+        old_status, old_invoice_no, old_invoice_date, old_funnel_number, old_expense_type_id = row
+
+        cursor.execute("SELECT id FROM expense_types WHERE expense_type_name = 'Projected'")
+        result = cursor.fetchone()
+        if not result:
+            raise HTTPException(status_code=400, detail="Expense type 'Projected' not found")
+        projected_type_id = result[0]
+
+        cursor.execute("""
+            UPDATE billing_entries
+            SET status = 'Active',
+                expense_type_id = %s,
+                invoice_no = NULL,
+                invoice_date = NULL,
+                funnel_number = NULL
+            WHERE id = %s
+        """, (projected_type_id, entry_id))
+
+        if old_status != 'Active':
+            log_audit(cursor, "billing_entries", entry_id, "status",
+                       old_status, "Active", "UPDATE",
+                       user["user_id"], user["role_id"], "billing", "HIGH")
+        if old_expense_type_id != projected_type_id:
+            log_audit(cursor, "billing_entries", entry_id, "expense_type_id",
+                       old_expense_type_id, projected_type_id, "UPDATE",
+                       user["user_id"], user["role_id"], "billing", "HIGH")
+        log_audit(cursor, "billing_entries", entry_id, "invoice_no",
+                   old_invoice_no, None, "UPDATE",
+                   user["user_id"], user["role_id"], "billing", "HIGH")
+        if old_invoice_date is not None:
+            log_audit(cursor, "billing_entries", entry_id, "invoice_date",
+                       old_invoice_date, None, "UPDATE",
+                       user["user_id"], user["role_id"], "billing", "MEDIUM")
+        if old_funnel_number:
+            log_audit(cursor, "billing_entries", entry_id, "funnel_number",
+                       old_funnel_number, None, "UPDATE",
+                       user["user_id"], user["role_id"], "billing", "MEDIUM")
+
+        conn.commit()
+        return {"id": entry_id, "message": f"Invoice {old_invoice_no} moved back to projected"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        print(f"Error unbilling entry {entry_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         release_connection(conn)

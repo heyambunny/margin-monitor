@@ -174,10 +174,15 @@ async def get_active_projections(user: dict = Depends(require_roles(1, 2))):
                 p.program_name,
                 b.client_billed_amount as amount,
                 b.invoice_description as description,
-                b.status
+                b.status,
+                cat.category_name,
+                b.invoice_month,
+                b.financial_year,
+                b.projection_date
             FROM billing_entries b
             JOIN clients c ON b.client_id = c.id
             JOIN programs p ON b.program_id = p.id
+            LEFT JOIN categories cat ON b.category_id = cat.id
             WHERE b.expense_type_id = 1
               AND b.status = 'Active'
         """
@@ -199,7 +204,11 @@ async def get_active_projections(user: dict = Depends(require_roles(1, 2))):
                 "program_name": r[2],
                 "amount": float(r[3]) if r[3] else 0,
                 "description": r[4] or "",
-                "status": r[5] or "Active"
+                "status": r[5] or "Active",
+                "category_name": r[6],
+                "invoice_month": r[7],
+                "financial_year": r[8],
+                "projection_date": r[9].strftime("%Y-%m-%d") if r[9] else None
             }
             for r in rows
         ]

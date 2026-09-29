@@ -1,18 +1,31 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { useTheme } from '@/lib/providers/ThemeProvider';
-import { Plus, Trash2, Save, Tag, Store, Calendar, Building2, Briefcase, Sparkles } from 'lucide-react';
-import { AnimatedNumber } from '@/components/ui/animated-number';
+import { Save, Tag, Store, Building2, Briefcase, PlusCircle, CheckCircle2, Circle, RotateCcw } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { API_URL } from '@/lib/api';
+import { formatINR } from '@/lib/format';
+import {
+  useUi, PageHeader, StatGrid, Card, Alert, Field, GradientButton, GhostButton, Spinner, Avatar, Chip, Badge,
+} from '@/components/app/ui';
+import { VendorRows, type VendorRow } from '@/components/app/VendorRows';
+
+const EMPTY_FORM = {
+  client_id: '',
+  program_id: '',
+  category_id: '',
+  description: '',
+  amount: '',
+  invoice_month: '',
+  financial_year: '',
+};
 
 export default function AddProjectionPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
+  const ui = useUi();
 
   const [clients, setClients] = useState<any[]>([]);
   const [allPrograms, setAllPrograms] = useState<any[]>([]);
@@ -20,30 +33,9 @@ export default function AddProjectionPage() {
   const [vendors, setVendors] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
 
-  const [formData, setFormData] = useState({
-    client_id: '',
-    program_id: '',
-    category_id: '',
-    description: '',
-    amount: '',
-    invoice_month: '',
-    financial_year: '',
-  });
-
-  const [vendorRows, setVendorRows] = useState([{ vendor_id: '', amount: '' }]);
-
-  const bgCard = isDark ? 'bg-[#131726]' : 'bg-white';
-  const border = isDark ? 'border-white/5' : 'border-gray-200';
-  const textMain = isDark ? 'text-white' : 'text-gray-900';
-  const textMuted = isDark ? 'text-white/50' : 'text-gray-500';
-  const textLabel = isDark ? 'text-white/50' : 'text-gray-600';
-  const inputBg = isDark ? 'bg-white/5' : 'bg-gray-50';
-  const inputBorder = isDark ? 'border-white/10' : 'border-gray-300';
-  const inputText = isDark ? 'text-white' : 'text-gray-800';
-  const placeholder = isDark ? 'placeholder-white/20' : 'placeholder-gray-400';
-  const footerBg = isDark ? 'bg-white/5' : 'bg-gray-50';
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [vendorRows, setVendorRows] = useState<VendorRow[]>([{ vendor_id: '', amount: '' }]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -57,7 +49,7 @@ export default function AddProjectionPage() {
         try {
           const token = localStorage.getItem('token');
           const headers = { Authorization: `Bearer ${token}` };
-          
+
           const [clientsRes, programsRes, categoriesRes, vendorsRes] = await Promise.all([
             fetch(`${API_URL}/api/clients`, { headers }),
             fetch(`${API_URL}/api/programs`, { headers }),
@@ -107,23 +99,32 @@ export default function AddProjectionPage() {
     return `${m}-${String(year).slice(-2)}`;
   });
 
-  const addVendorRow = () => {
-    setVendorRows([...vendorRows, { vendor_id: '', amount: '' }]);
+  const selectMonth = (val: string) => {
+    let fy = '';
+    if (val) {
+      const month = val.split('-')[0];
+      const year = parseInt('20' + val.split('-')[1]);
+      if (['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].includes(month)) {
+        fy = `FY ${year}-${year + 1}`;
+      } else {
+        fy = `FY ${year - 1}-${year}`;
+      }
+    }
+    setFormData(prev => ({ ...prev, invoice_month: val, financial_year: fy }));
   };
 
-  const removeVendorRow = (index: number) => {
-    if (vendorRows.length > 1) {
-      setVendorRows(vendorRows.filter((_, i) => i !== index));
-    }
+  const resetForm = () => {
+    setFormData(EMPTY_FORM);
+    setVendorRows([{ vendor_id: '', amount: '' }]);
+    setError('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setSuccess(false);
     setSubmitting(true);
 
-    if (!formData.client_id || !formData.program_id || !formData.category_id || 
+    if (!formData.client_id || !formData.program_id || !formData.category_id ||
         !formData.description || !formData.amount || !formData.invoice_month) {
       setError('Please fill in all required fields');
       setSubmitting(false);
@@ -162,19 +163,8 @@ export default function AddProjectionPage() {
         throw new Error(data.detail || 'Failed to add projection');
       }
 
-      setSuccess(true);
-      setFormData({
-        client_id: '',
-        program_id: '',
-        category_id: '',
-        description: '',
-        amount: '',
-        invoice_month: '',
-        financial_year: '',
-      });
-      setVendorRows([{ vendor_id: '', amount: '' }]);
-
-      setTimeout(() => setSuccess(false), 3000);
+      toast.success(`Projection added for ${selectedClient?.client_name ?? 'client'} · ${formatINR(payload.amount)}`);
+      resetForm();
     } catch (err: any) {
       setError(err.message || 'Failed to add projection');
     } finally {
@@ -182,344 +172,285 @@ export default function AddProjectionPage() {
     }
   };
 
-  const totalVendor = vendorRows.reduce((sum, row) => {
-    return sum + (row.amount ? parseFloat(row.amount) : 0);
-  }, 0);
-  const amount = formData.amount ? parseFloat(formData.amount) : 0;
-  const margin = amount - totalVendor;
-  const marginPercentage = amount > 0 ? (margin / amount) * 100 : 0;
+  const selectedClient = clients.find((c: any) => String(c.id) === formData.client_id);
+  const selectedProgram = allPrograms.find((p: any) => String(p.id) === formData.program_id);
+  const selectedCategory = categories.find((c: any) => String(c.id) === formData.category_id);
+  const amount = formData.amount ? parseFloat(formData.amount) || 0 : 0;
+  const vendorTotal = vendorRows.reduce((sum, row) => sum + (parseFloat(row.amount) || 0), 0);
+  const margin = amount - vendorTotal;
+  const marginPct = amount > 0 ? (margin / amount) * 100 : 0;
+
+  const checklist = [
+    ['Client', Boolean(formData.client_id)],
+    ['Program', Boolean(formData.program_id)],
+    ['Category', Boolean(formData.category_id)],
+    ['Description', Boolean(formData.description.trim())],
+    ['Amount', amount > 0],
+    ['Invoice month', Boolean(formData.invoice_month)],
+  ] as const;
+  const doneCount = checklist.filter(([, ok]) => ok).length;
+  const isDirty = JSON.stringify(formData) !== JSON.stringify(EMPTY_FORM) || vendorRows.some(v => v.vendor_id || v.amount);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
+      <div className="flex items-center justify-center h-64 text-blue-500">
+        <Spinner className="h-8 w-8" />
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto relative">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-20 -right-20 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl" />
-        <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 right-0 w-32 h-32 bg-blue-400/5 rounded-full blur-2xl" />
-      </div>
+    <div className="max-w-7xl mx-auto">
+      <PageHeader
+        icon={PlusCircle}
+        title="Add Projection"
+        subtitle="Create a new projection entry"
+        actions={<Chip>{currentFinancialYear}</Chip>}
+      />
 
-      <div className="relative mb-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className={`text-2xl font-semibold ${textMain}`}>Add Projection</h1>
-            <p className={`text-sm ${textMuted}`}>Create a new projection entry</p>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className={`flex items-center gap-2 px-3 py-1.5 ${isDark ? 'bg-white/5' : 'bg-gray-100'} rounded-lg`}>
-              <Sparkles className="h-3.5 w-3.5 text-blue-400" />
-              <span className={`text-xs ${textMuted}`}>New Entry</span>
-            </div>
-            <div className={`flex items-center gap-2 px-3 py-1.5 ${isDark ? 'bg-white/5' : 'bg-gray-100'} rounded-lg`}>
-              <Calendar className="h-3.5 w-3.5 text-purple-400" />
-              <span className={`text-xs ${textMuted}`}>{currentFinancialYear}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <div className={`relative p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${border}`}>
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-blue-500/10 rounded-lg shrink-0">
-              <Building2 className="h-3.5 w-3.5 text-blue-400" />
-            </div>
-            <span className={`text-xs ${textMuted}`}>Your Clients</span>
-          </div>
-          <p className={`text-lg font-semibold ${textMain} mt-1.5`}>
-            <AnimatedNumber value={clients.length} duration={800} />
-          </p>
-        </div>
-        <div className={`relative p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${border}`}>
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-purple-500/10 rounded-lg shrink-0">
-              <Briefcase className="h-3.5 w-3.5 text-purple-400" />
-            </div>
-            <span className={`text-xs ${textMuted}`}>Mapped Programs</span>
-          </div>
-          <p className={`text-lg font-semibold ${textMain} mt-1.5`}>
-            <AnimatedNumber value={mappedPrograms.length} duration={800} />
-          </p>
-        </div>
-        <div className={`relative p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${border}`}>
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-amber-500/10 rounded-lg shrink-0">
-              <Tag className="h-3.5 w-3.5 text-amber-400" />
-            </div>
-            <span className={`text-xs ${textMuted}`}>Categories</span>
-          </div>
-          <p className={`text-lg font-semibold ${textMain} mt-1.5`}>
-            <AnimatedNumber value={categories.length} duration={800} />
-          </p>
-        </div>
-        <div className={`relative p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${border}`}>
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-green-500/10 rounded-lg shrink-0">
-              <Store className="h-3.5 w-3.5 text-green-400" />
-            </div>
-            <span className={`text-xs ${textMuted}`}>Vendors</span>
-          </div>
-          <p className={`text-lg font-semibold ${textMain} mt-1.5`}>
-            <AnimatedNumber value={vendors.length} duration={800} />
-          </p>
-        </div>
-      </div>
+      <StatGrid
+        stats={[
+          { label: 'Your Clients', value: clients.length, icon: Building2, color: 'blue' },
+          { label: 'Mapped Programs', value: mappedPrograms.length, icon: Briefcase, color: 'purple' },
+          { label: 'Categories', value: categories.length, icon: Tag, color: 'amber' },
+          { label: 'Vendors', value: vendors.length, icon: Store, color: 'emerald' },
+        ]}
+      />
 
-      {success && (
-        <div className="relative mb-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-sm">
-          ✅ Projection added successfully!
-        </div>
-      )}
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        {/* Form */}
+        <div className="lg:col-span-2 space-y-4">
+          {error && <Alert tone="error">{error}</Alert>}
 
-      {error && (
-        <div className="relative mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-          ❌ {error}
-        </div>
-      )}
-
-      <div className={`relative ${bgCard} ${border} border rounded-xl overflow-hidden transition-colors duration-300 shadow-xl`}>
-        <form onSubmit={handleSubmit}>
-          <div className="p-6 space-y-4">
+          <Section step={1} title="Who is it for?" done={Boolean(formData.client_id && formData.program_id && formData.category_id)}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className={`block text-xs font-medium ${textLabel} mb-1`}>Client *</label>
+              <Field label="Client *">
                 <select
-                  className={`w-full px-3 py-2 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} appearance-none`}
-                  style={{ colorScheme: isDark ? 'dark' : 'light' }}
+                  className={`w-full px-3 py-2 text-sm ${ui.input}`}
+                  style={ui.colorScheme}
                   value={formData.client_id}
-                  onChange={(e) => {
-                    setFormData({ ...formData, client_id: e.target.value, program_id: '' });
-                  }}
+                  onChange={(e) => setFormData({ ...formData, client_id: e.target.value, program_id: '' })}
                   required
                 >
-                  <option value="" className={isDark ? 'bg-[#131726]' : 'bg-white'}>Select Client</option>
+                  <option value="">Select client</option>
                   {clients.map((c: any) => (
-                    <option key={c.id} value={String(c.id)} className={isDark ? 'bg-[#131726]' : 'bg-white'}>{c.client_name}</option>
+                    <option key={c.id} value={String(c.id)}>{c.client_name}</option>
                   ))}
                 </select>
-              </div>
-
-              <div>
-                <label className={`block text-xs font-medium ${textLabel} mb-1`}>Program *</label>
+              </Field>
+              <Field label="Program *" hint={formData.client_id ? `${filteredPrograms.length} available` : undefined}>
                 <select
-                  className={`w-full px-3 py-2 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} appearance-none disabled:opacity-50`}
-                  style={{ colorScheme: isDark ? 'dark' : 'light' }}
+                  className={`w-full px-3 py-2 text-sm ${ui.input} disabled:opacity-50`}
+                  style={ui.colorScheme}
                   value={formData.program_id}
                   onChange={(e) => setFormData({ ...formData, program_id: e.target.value })}
                   required
                   disabled={!formData.client_id}
                 >
-                  <option value="" className={isDark ? 'bg-[#131726]' : 'bg-white'}>
-                    {!formData.client_id ? 'Select client first' : 'Select Program'}
-                  </option>
+                  <option value="">{!formData.client_id ? 'Select client first' : 'Select program'}</option>
                   {filteredPrograms.map((p: any) => (
-                    <option key={p.id} value={String(p.id)} className={isDark ? 'bg-[#131726]' : 'bg-white'}>{p.program_name}</option>
+                    <option key={p.id} value={String(p.id)}>{p.program_name}</option>
                   ))}
                 </select>
-              </div>
-
-              <div>
-                <label className={`block text-xs font-medium ${textLabel} mb-1`}>Category *</label>
+              </Field>
+              <Field label="Category *">
                 <select
-                  className={`w-full px-3 py-2 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} appearance-none`}
-                  style={{ colorScheme: isDark ? 'dark' : 'light' }}
+                  className={`w-full px-3 py-2 text-sm ${ui.input}`}
+                  style={ui.colorScheme}
                   value={formData.category_id}
                   onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                   required
                 >
-                  <option value="" className={isDark ? 'bg-[#131726]' : 'bg-white'}>Select Category</option>
+                  <option value="">Select category</option>
                   {categories.map((c: any) => (
-                    <option key={c.id} value={String(c.id)} className={isDark ? 'bg-[#131726]' : 'bg-white'}>{c.category_name}</option>
+                    <option key={c.id} value={String(c.id)}>{c.category_name}</option>
                   ))}
                 </select>
-              </div>
+              </Field>
             </div>
+          </Section>
 
-            <div>
-              <label className={`block text-xs font-medium ${textLabel} mb-1`}>Description *</label>
+          <Section step={2} title="What and when?" done={Boolean(formData.description.trim() && amount > 0 && formData.invoice_month)}>
+            <Field label="Description *" hint={`${formData.description.length} chars`}>
               <textarea
-                className={`w-full px-3 py-2 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} ${placeholder} resize-none`}
+                className={`w-full px-3 py-2 text-sm ${ui.input} resize-y min-h-[80px]`}
                 rows={3}
-                placeholder="Enter invoice description..."
+                placeholder="Enter invoice description…"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 required
               />
-            </div>
+            </Field>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className={`block text-xs font-medium ${textLabel} mb-1`}>Amount *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className={`w-full px-3 py-2 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} ${placeholder}`}
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                  required
-                  min="0"
-                  placeholder="0.00"
-                />
-              </div>
-
-              <div>
-                <label className={`block text-xs font-medium ${textLabel} mb-1`}>Invoice Month *</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Amount *">
+                <div className="relative">
+                  <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-lg ${ui.muted}`}>₹</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className={`w-full pl-8 pr-3 py-2 text-lg font-semibold tabular-nums ${ui.input}`}
+                    value={formData.amount}
+                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                    required
+                    min="0"
+                    placeholder="0"
+                  />
+                </div>
+              </Field>
+              <Field label="Invoice Month *" hint={formData.financial_year || undefined}>
                 <select
-                  className={`w-full px-3 py-2 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} appearance-none`}
-                  style={{ colorScheme: isDark ? 'dark' : 'light' }}
+                  className={`w-full px-3 py-2.5 text-sm ${ui.input}`}
+                  style={ui.colorScheme}
                   value={formData.invoice_month}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormData({ ...formData, invoice_month: val });
-                    if (val) {
-                      const month = val.split('-')[0];
-                      const year = parseInt('20' + val.split('-')[1]);
-                      let fy;
-                      if (['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].includes(month)) {
-                        fy = `FY ${year}-${year + 1}`;
-                      } else {
-                        fy = `FY ${year - 1}-${year}`;
-                      }
-                      setFormData(prev => ({ ...prev, financial_year: fy }));
-                    }
-                  }}
+                  onChange={(e) => selectMonth(e.target.value)}
                   required
                 >
-                  <option value="" className={isDark ? 'bg-[#131726]' : 'bg-white'}>Select Month</option>
+                  <option value="">Select month</option>
                   {monthOptions.map((m) => (
-                    <option key={m} value={m} className={isDark ? 'bg-[#131726]' : 'bg-white'}>{m}</option>
+                    <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
+              </Field>
+            </div>
+
+            {/* Quick month picker */}
+            <div className="flex flex-wrap gap-1.5">
+              {monthOptions.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => selectMonth(m)}
+                  className={`px-2.5 py-1 text-[11px] rounded-full border transition ${
+                    formData.invoice_month === m
+                      ? 'bg-gradient-to-r from-blue-500 to-purple-500 border-transparent text-white shadow shadow-blue-500/30'
+                      : `${ui.border} ${ui.textSoft} ${ui.hoverBtn}`
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          <Section step={3} title="Vendor costs" optional>
+            <VendorRows
+              rows={vendorRows}
+              onChange={setVendorRows}
+              vendors={vendors}
+              amount={0 /* margin is shown in the preview card */}
+              title="Vendor Expenses"
+              note="Add the vendor costs associated with this projection."
+            />
+          </Section>
+        </div>
+
+        {/* Live summary */}
+        <div className="lg:sticky lg:top-4 space-y-4">
+          <Card className="overflow-hidden">
+            <div className="h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
+            <div className="p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className={`text-xs uppercase tracking-wide ${ui.muted}`}>Preview</span>
+                <Badge tone="amber">Projected</Badge>
+              </div>
+
+              <div className="flex items-center gap-3 min-w-0">
+                <Avatar name={selectedClient?.client_name || '?'} size="lg" />
+                <div className="min-w-0">
+                  <p className={`text-sm font-semibold ${ui.text} truncate`}>{selectedClient?.client_name || 'Select a client'}</p>
+                  <p className={`text-xs ${ui.textSoft} truncate`}>{selectedProgram?.program_name || 'Program'}</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {selectedCategory && <Chip>{selectedCategory.category_name}</Chip>}
+                {formData.invoice_month && <Chip>{formData.invoice_month}</Chip>}
+                {formData.financial_year && <Chip>{formData.financial_year}</Chip>}
               </div>
 
               <div>
-                <label className={`block text-xs font-medium ${textLabel} mb-1`}>Financial Year</label>
-                <input
-                  type="text"
-                  className={`w-full px-3 py-2 text-sm ${inputBg} ${inputBorder} border rounded-lg ${textMuted} cursor-not-allowed`}
-                  value={formData.financial_year || 'Select month first'}
-                  disabled
-                />
-              </div>
-            </div>
-
-            <div className={`pt-4 border-t ${border}`}>
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className={`text-sm font-medium ${textMain}`}>Vendor Expenses</h3>
-                  <p className={`text-xs ${textMuted}`}>Add vendor costs associated with this projection</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={addVendorRow}
-                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg transition"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Vendor
-                </button>
+                <p className={`text-[11px] ${ui.muted}`}>Amount</p>
+                <p className={`text-2xl font-bold ${ui.text} tabular-nums transition-all`}>{formatINR(amount)}</p>
               </div>
 
-              <div className="space-y-2">
-                {vendorRows.map((row, idx) => (
-                  <div key={idx} className={`flex items-center gap-2 p-2 ${isDark ? 'bg-white/5' : 'bg-gray-50'} ${border} border rounded-lg`}>
-                    <select
-                      className={`flex-1 px-3 py-1.5 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} appearance-none`}
-                      style={{ colorScheme: isDark ? 'dark' : 'light' }}
-                      value={row.vendor_id}
-                      onChange={(e) => {
-                        const newRows = [...vendorRows];
-                        newRows[idx].vendor_id = e.target.value;
-                        setVendorRows(newRows);
-                      }}
-                    >
-                      <option value="" className={isDark ? 'bg-[#131726]' : 'bg-white'}>Select Vendor</option>
-                      {vendors.map((v: any) => (
-                        <option key={v.id} value={String(v.id)} className={isDark ? 'bg-[#131726]' : 'bg-white'}>{v.vendor_name}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      step="0.01"
-                      placeholder="Amount"
-                      className={`w-24 px-3 py-1.5 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} ${placeholder}`}
-                      value={row.amount}
-                      onChange={(e) => {
-                        const newRows = [...vendorRows];
-                        newRows[idx].amount = e.target.value;
-                        setVendorRows(newRows);
-                      }}
+              {amount > 0 && (
+                <div className="space-y-1.5 animate-in fade-in">
+                  <div className="flex justify-between text-xs">
+                    <span className={ui.muted}>Vendor costs</span>
+                    <span className={`${ui.text} tabular-nums`}>{formatINR(vendorTotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className={ui.muted}>Estimated margin</span>
+                    <span className={`font-semibold tabular-nums ${margin >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {formatINR(margin)} ({marginPct.toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div className={`h-1.5 rounded-full ${ui.isDark ? 'bg-white/10' : 'bg-gray-200'} overflow-hidden`}>
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${margin >= 0 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-red-500'}`}
+                      style={{ width: `${Math.min(100, Math.max(0, Math.abs(marginPct)))}%` }}
                     />
-                    <button
-                      type="button"
-                      onClick={() => removeVendorRow(idx)}
-                      className={`p-1.5 text-gray-400 hover:text-red-400 transition disabled:opacity-30`}
-                      disabled={vendorRows.length === 1}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {(amount > 0 || totalVendor > 0) && (
-                <div className={`mt-3 p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} ${border} border rounded-lg`}>
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs ${textMuted}`}>Estimated Margin</span>
-                    <div className="text-right">
-                      <span className={`text-sm font-medium ${margin >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        ₹{margin.toFixed(2)}
-                      </span>
-                      <span className={`text-xs ml-2 ${marginPercentage >= 0 ? 'text-green-400/60' : 'text-red-400/60'}`}>
-                        ({marginPercentage.toFixed(1)}%)
-                      </span>
-                    </div>
                   </div>
                 </div>
               )}
-            </div>
-          </div>
 
-          <div className={`px-6 py-4 ${footerBg} ${border} border-t flex items-center justify-end gap-3`}>
-            <button
-              type="button"
-              onClick={() => {
-                setFormData({
-                  client_id: '',
-                  program_id: '',
-                  category_id: '',
-                  description: '',
-                  amount: '',
-                  invoice_month: '',
-                  financial_year: '',
-                });
-                setVendorRows([{ vendor_id: '', amount: '' }]);
-              }}
-              className={`px-4 py-2 text-sm ${textMuted} hover:${isDark ? 'text-white/60' : 'text-gray-700'} transition`}
-            >
-              Clear
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white text-sm font-medium rounded-lg transition disabled:opacity-50"
-            >
-              {submitting ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-              ) : (
-                <>
-                  <Save className="h-4 w-4" />
-                  Save Projection
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
+              {/* Required fields checklist */}
+              <div className={`pt-3 border-t ${ui.border}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-xs ${ui.muted}`}>Required fields</span>
+                  <span className={`text-xs font-medium ${doneCount === checklist.length ? 'text-emerald-400' : ui.textSoft}`}>
+                    {doneCount}/{checklist.length}
+                  </span>
+                </div>
+                <div className={`h-1 rounded-full ${ui.isDark ? 'bg-white/10' : 'bg-gray-200'} overflow-hidden mb-3`}>
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
+                    style={{ width: `${(doneCount / checklist.length) * 100}%` }}
+                  />
+                </div>
+                <ul className="grid grid-cols-2 gap-1.5">
+                  {checklist.map(([label, ok]) => (
+                    <li key={label} className={`flex items-center gap-1.5 text-xs ${ok ? 'text-emerald-400' : ui.muted}`}>
+                      {ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
+                      {label}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <GhostButton onClick={resetForm} disabled={!isDirty || submitting} className="flex items-center gap-1.5">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Clear
+                </GhostButton>
+                <GradientButton type="submit" disabled={submitting || doneCount < checklist.length} className="flex-1">
+                  {submitting ? <Spinner /> : <Save className="h-4 w-4" />}
+                  {submitting ? 'Saving…' : 'Save'}
+                </GradientButton>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </form>
     </div>
+  );
+}
+
+function Section({ step, title, done, optional, children }: { step: number; title: string; done?: boolean; optional?: boolean; children: ReactNode }) {
+  const ui = useUi();
+  return (
+    <Card className="p-5 space-y-4 animate-in fade-in slide-in-from-bottom-2 fill-mode-both" >
+      <div className="flex items-center gap-3">
+        <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
+          done ? 'bg-emerald-500 text-white' : 'bg-gradient-to-br from-blue-500 to-purple-500 text-white'
+        }`}>
+          {done ? <CheckCircle2 className="h-4 w-4" /> : step}
+        </div>
+        <h2 className={`text-sm font-semibold ${ui.text}`}>{title}</h2>
+        {optional && <span className={`text-[11px] ${ui.muted}`}>Optional</span>}
+      </div>
+      {children}
+    </Card>
   );
 }

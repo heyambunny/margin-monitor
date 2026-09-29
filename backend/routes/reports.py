@@ -35,7 +35,7 @@ def get_reports(token: str = Depends(oauth2_scheme)):
             b.invoice_description,
             b.client_billed_amount,
             b.projection_date,
-            u.name,
+            u.name AS created_by,
 
             MAX(CASE WHEN ve.row_num = 1 THEN v.vendor_name END) AS vendor1name,
             MAX(CASE WHEN ve.row_num = 1 THEN ve.amount END) AS vendor1amount,

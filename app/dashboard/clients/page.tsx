@@ -3,66 +3,37 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { useTheme } from '@/lib/providers/ThemeProvider';
-import {
-  Search, X, RefreshCw, Users, UserPlus, Building2,
-  Plus, CheckCircle2, AlertCircle
-} from 'lucide-react';
-
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { AnimatedProgress } from '@/components/ui/animated-progress';
+import { Search, X, Users, UserPlus, Building2, Plus, ShieldCheck, UserCog } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { API_URL } from '@/lib/api';
+import {
+  useUi, PageHeader, RefreshButton, StatGrid, Card, Avatar, Badge, EmptyState, Modal, Field,
+  GradientButton, GhostButton, Spinner, PageSkeleton, type BadgeTone,
+} from '@/components/app/ui';
 
-// Minimal blue shades for avatars - matches the rest of the app
-const BLUE_SHADES = ['#3b82f6', '#60a5fa', '#93c5fd', '#2563eb', '#1d4ed8', '#bfdbfe', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0284c7'];
+// Must match roles.role_name exactly - the backend looks the role up by name.
+const ROLES = ['Admin', 'Finance', 'Supervisor'] as const;
+const ROLE_TONE: Record<string, BadgeTone> = { admin: 'purple', finance: 'amber', supervisor: 'blue' };
+const roleTone = (role?: string) => ROLE_TONE[(role || '').toLowerCase()] || 'gray';
 
 export default function ClientsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
+  const ui = useUi();
 
   const [usersList, setUsersList] = useState<any[]>([]);
   const [clientsList, setClientsList] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userClients, setUserClients] = useState<number[]>([]);
   const [isFetching, setIsFetching] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [loadingUserClients, setLoadingUserClients] = useState(false);
+  const [busyClientId, setBusyClientId] = useState<number | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user' });
-
-  const bgColor = isDark ? 'bg-[#0b0e1a]' : 'bg-gray-50';
-  const cardBg = isDark ? 'bg-[#131726]' : 'bg-white';
-  const borderColor = isDark ? 'border-white/5' : 'border-gray-200';
-  const textColor = isDark ? 'text-white' : 'text-gray-900';
-  const textMuted = isDark ? 'text-gray-400' : 'text-gray-500';
-  const hoverBg = isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50';
-  const inputBg = isDark ? 'bg-white/5' : 'bg-gray-50';
-  const inputBorder = isDark ? 'border-white/10' : 'border-gray-300';
-  const inputText = isDark ? 'text-white' : 'text-gray-800';
-  const placeholder = isDark ? 'placeholder-white/20' : 'placeholder-gray-400';
-  const activeBg = isDark ? 'bg-blue-500/10' : 'bg-blue-50';
+  const [creating, setCreating] = useState(false);
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'Supervisor' });
 
   useEffect(() => {
     if (!loading && !user) {
@@ -81,43 +52,48 @@ export default function ClientsPage() {
     try {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
-      
+
       const [usersRes, clientsRes] = await Promise.all([
         fetch(`${API_URL}/api/users`, { headers }),
         fetch(`${API_URL}/api/clients`, { headers }),
       ]);
-      
+
       const usersData = await usersRes.json();
       const clientsData = await clientsRes.json();
-      
+
       setUsersList(Array.isArray(usersData) ? usersData : []);
       setClientsList(Array.isArray(clientsData) ? clientsData : []);
-      
-      if (usersData && usersData.length > 0) {
-        setSelectedUser(usersData[0]);
-        fetchUserClients(usersData[0].id);
+
+      if (Array.isArray(usersData) && usersData.length > 0) {
+        const keep = selectedUser && usersData.find((u: any) => u.id === selectedUser.id);
+        const next = keep || usersData[0];
+        setSelectedUser(next);
+        fetchUserClients(next.id);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
-      setError('Failed to load data');
+      toast.error('Failed to load users and clients');
     } finally {
       setIsFetching(false);
     }
   };
 
   const fetchUserClients = async (userId: number) => {
+    setLoadingUserClients(true);
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/user-clients/${userId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setUserClients(Array.isArray(data) ? data.map((c: any) => c.id) : []);
       }
     } catch (err) {
       console.error('Failed to fetch user clients:', err);
+    } finally {
+      setLoadingUserClients(false);
     }
   };
 
@@ -128,7 +104,7 @@ export default function ClientsPage() {
 
   const handleAssignClient = async (clientId: number) => {
     if (!selectedUser) return;
-    
+    setBusyClientId(clientId);
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/assign-client`, {
@@ -139,25 +115,25 @@ export default function ClientsPage() {
         },
         body: JSON.stringify({ user_id: selectedUser.id, client_id: clientId })
       });
-      
+
       if (response.ok) {
         setUserClients([...userClients, clientId]);
-        setSuccess(`Client assigned to ${selectedUser.name}`);
-        setTimeout(() => setSuccess(''), 3000);
+        const name = clientsList.find((c: any) => c.id === clientId)?.client_name;
+        toast.success(`${name ?? 'Client'} assigned to ${selectedUser.name}`);
       } else {
         const data = await response.json();
-        setError(data.detail || 'Failed to assign client');
-        setTimeout(() => setError(''), 3000);
+        toast.error(data.detail || 'Failed to assign client');
       }
     } catch (err) {
-      setError('Failed to assign client');
-      setTimeout(() => setError(''), 3000);
+      toast.error('Failed to assign client');
+    } finally {
+      setBusyClientId(null);
     }
   };
 
   const handleRemoveClient = async (clientId: number) => {
     if (!selectedUser) return;
-    
+    setBusyClientId(clientId);
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/remove-client`, {
@@ -168,24 +144,25 @@ export default function ClientsPage() {
         },
         body: JSON.stringify({ user_id: selectedUser.id, client_id: clientId })
       });
-      
+
       if (response.ok) {
         setUserClients(userClients.filter(id => id !== clientId));
-        setSuccess(`Client removed from ${selectedUser.name}`);
-        setTimeout(() => setSuccess(''), 3000);
+        const name = clientsList.find((c: any) => c.id === clientId)?.client_name;
+        toast.success(`${name ?? 'Client'} removed from ${selectedUser.name}`);
       } else {
         const data = await response.json();
-        setError(data.detail || 'Failed to remove client');
-        setTimeout(() => setError(''), 3000);
+        toast.error(data.detail || 'Failed to remove client');
       }
     } catch (err) {
-      setError('Failed to remove client');
-      setTimeout(() => setError(''), 3000);
+      toast.error('Failed to remove client');
+    } finally {
+      setBusyClientId(null);
     }
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreating(true);
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/users`, {
@@ -196,40 +173,31 @@ export default function ClientsPage() {
         },
         body: JSON.stringify(newUser)
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setUsersList([...usersList, data]);
         setIsDialogOpen(false);
-        setNewUser({ name: '', email: '', password: '', role: 'user' });
-        setSuccess('User created successfully');
-        setTimeout(() => setSuccess(''), 3000);
+        toast.success(`User ${newUser.name} created`);
+        setNewUser({ name: '', email: '', password: '', role: 'Supervisor' });
         fetchData();
       } else {
         const data = await response.json();
-        setError(data.detail || 'Failed to create user');
-        setTimeout(() => setError(''), 3000);
+        toast.error(data.detail || 'Failed to create user');
       }
     } catch (err) {
-      setError('Failed to create user');
-      setTimeout(() => setError(''), 3000);
+      toast.error('Failed to create user');
+    } finally {
+      setCreating(false);
     }
   };
 
-  const filteredClients = Array.isArray(clientsList) 
-    ? clientsList.filter((c: any) => 
+  const filteredClients = Array.isArray(clientsList)
+    ? clientsList.filter((c: any) =>
         c.client_name?.toLowerCase().includes(searchTerm.toLowerCase())
       )
     : [];
-
-  const getRoleBadge = (role: string) => {
-    const colors: Record<string, string> = {
-      'admin': isDark ? 'bg-purple-500/15 text-purple-400' : 'bg-purple-100 text-purple-700',
-      'supervisor': isDark ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-100 text-blue-700',
-      'user': isDark ? 'bg-gray-500/15 text-gray-400' : 'bg-gray-200 text-gray-600',
-    };
-    return colors[role] || colors['user'];
-  };
+  const availableClients = filteredClients.filter((c: any) => !userClients.includes(c.id));
 
   const filteredUsers = usersList.filter((u: any) =>
     (u.name || '').toLowerCase().includes(userSearchTerm.toLowerCase()) ||
@@ -237,298 +205,277 @@ export default function ClientsPage() {
   );
 
   const roleCounts = usersList.reduce((acc: Record<string, number>, u: any) => {
-    const role = u.role || 'user';
+    const role = (u.role || '').toLowerCase();
     acc[role] = (acc[role] || 0) + 1;
     return acc;
   }, {});
 
-  if (isFetching) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-purple-500 border-t-transparent" />
-      </div>
-    );
+  if (isFetching && usersList.length === 0) {
+    return <PageSkeleton />;
   }
 
+  const coverage = clientsList.length ? (userClients.length / clientsList.length) * 100 : 0;
+
   return (
-    <div className={`min-h-screen ${bgColor} transition-colors duration-300`}>
-      <div className="max-w-7xl mx-auto p-4">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-          <div>
-            <h1 className={`text-lg font-semibold ${textColor}`}>Client Access</h1>
-            <p className={`text-xs ${textMuted}`}>Manage user access and client permissions</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="h-8 gap-1.5">
-                  <UserPlus className="h-3.5 w-3.5" />
-                  Add User
-                </Button>
-              </DialogTrigger>
-              <DialogContent className={`${cardBg} ${borderColor} border`}>
-                <DialogHeader>
-                  <DialogTitle className={textColor}>Create New User</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleCreateUser} className="space-y-4 py-4">
-                  <div>
-                    <label className={`text-xs font-medium ${textMuted}`}>Name *</label>
-                    <Input
-                      value={newUser.name}
-                      onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                      className={`mt-1 ${inputBg} ${inputBorder} border ${inputText} ${placeholder}`}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className={`text-xs font-medium ${textMuted}`}>Email *</label>
-                    <Input
-                      type="email"
-                      value={newUser.email}
-                      onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                      className={`mt-1 ${inputBg} ${inputBorder} border ${inputText} ${placeholder}`}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className={`text-xs font-medium ${textMuted}`}>Password *</label>
-                    <Input
-                      type="password"
-                      value={newUser.password}
-                      onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                      className={`mt-1 ${inputBg} ${inputBorder} border ${inputText} ${placeholder}`}
-                      required
-                      minLength={6}
-                    />
-                  </div>
-                  <div>
-                    <label className={`text-xs font-medium ${textMuted}`}>Role</label>
-                    <Select 
-                      value={newUser.role} 
-                      onValueChange={(value) => setNewUser({ ...newUser, role: value })}
-                    >
-                      <SelectTrigger className={`mt-1 ${inputBg} ${inputBorder} border ${inputText}`}>
-                        <SelectValue placeholder="Select role" />
-                      </SelectTrigger>
-                      <SelectContent className={cardBg}>
-                        <SelectItem value="user" className="text-xs">User</SelectItem>
-                        <SelectItem value="supervisor" className="text-xs">Supervisor</SelectItem>
-                        <SelectItem value="admin" className="text-xs">Admin</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button type="submit">Create User</Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+    <div className="max-w-7xl mx-auto">
+      <PageHeader
+        icon={UserCog}
+        title="Client Access"
+        subtitle="Pick a user, then click clients to grant or remove access"
+        gradient="from-pink-500 to-rose-500"
+        actions={
+          <>
+            <RefreshButton onClick={fetchData} loading={isFetching} />
+            <GradientButton onClick={() => setIsDialogOpen(true)} className="!py-1.5 !text-xs">
+              <UserPlus className="h-3.5 w-3.5" />
+              Add User
+            </GradientButton>
+          </>
+        }
+      />
 
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={fetchData} 
-              className={`h-8 w-8 p-0 ${cardBg} ${borderColor} border`}
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${textMuted}`} />
-            </Button>
-          </div>
-        </div>
+      <StatGrid
+        stats={[
+          { label: 'Users', value: usersList.length, icon: Users, color: 'blue' },
+          { label: 'Admins', value: roleCounts.admin || 0, icon: ShieldCheck, color: 'purple' },
+          { label: 'Finance', value: roleCounts.finance || 0, icon: Building2, color: 'amber' },
+          { label: 'Supervisors', value: roleCounts.supervisor || 0, icon: UserCog, color: 'cyan' },
+        ]}
+      />
 
-        {success && (
-          <div className="mb-3 flex items-center gap-2 p-2 text-sm bg-green-500/10 border border-green-500/20 rounded-lg text-green-400">
-            <CheckCircle2 className="h-4 w-4 shrink-0" /> {success}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Users */}
+        <Card className="p-4 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className={`text-sm font-semibold ${ui.text} flex items-center gap-2`}>
+              <Users className="h-4 w-4" />
+              Users
+            </h2>
+            <span className={`text-[11px] ${ui.muted}`}>{filteredUsers.length} of {usersList.length}</span>
           </div>
-        )}
-
-        {error && (
-          <div className="mb-3 flex items-center gap-2 p-2 text-sm bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
-            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+          <div className="relative mb-3">
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${ui.muted}`} />
+            <input
+              type="text"
+              placeholder="Search users…"
+              className={`w-full pl-8 pr-8 py-2 text-sm ${ui.input}`}
+              value={userSearchTerm}
+              onChange={(e) => setUserSearchTerm(e.target.value)}
+            />
+            {userSearchTerm && (
+              <button onClick={() => setUserSearchTerm('')} className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 ${ui.muted} hover:text-red-400`}>
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
-        )}
-
-        {/* Main Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* Users List */}
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardHeader className="p-3 pb-1">
-              <div className="flex items-center justify-between">
-                <CardTitle className={`text-xs font-medium ${textColor} flex items-center gap-2`}>
-                  <Users className="h-3.5 w-3.5" />
-                  Users ({usersList.length})
-                </CardTitle>
+          <div className="max-h-[440px] overflow-y-auto -mx-1 px-1 space-y-1" style={ui.colorScheme}>
+            {filteredUsers.length === 0 ? (
+              <div className="py-10">
+                <EmptyState icon={Users} title={usersList.length === 0 ? 'No users found' : 'No users match your search'} />
               </div>
-              {usersList.length > 0 && (
-                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                  {Object.entries(roleCounts).map(([role, count]) => (
-                    <span key={role} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium ${getRoleBadge(role)}`}>
-                      {count} {role}{(count as number) !== 1 ? 's' : ''}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="relative mt-2">
-                <Search className={`absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${textMuted}`} />
-                <input
-                  type="text"
-                  placeholder="Search users..."
-                  className={`w-full pl-7 pr-2 py-1.5 text-xs ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} ${placeholder}`}
-                  value={userSearchTerm}
-                  onChange={(e) => setUserSearchTerm(e.target.value)}
-                />
-              </div>
-            </CardHeader>
-            <CardContent className="p-3 pt-2 max-h-[380px] overflow-y-auto space-y-1">
-              {filteredUsers.length === 0 ? (
-                <div className="flex flex-col items-center gap-1.5 py-8">
-                  <Users className={`h-5 w-5 ${textMuted} opacity-40`} />
-                  <p className={`text-xs ${textMuted}`}>{usersList.length === 0 ? 'No users found' : 'No users match your search'}</p>
-                </div>
-              ) : (
-                filteredUsers.map((u, idx) => (
+            ) : (
+              filteredUsers.map((u, idx) => {
+                const active = selectedUser?.id === u.id;
+                return (
                   <button
                     key={u.id}
                     onClick={() => handleUserSelect(u)}
-                    className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors ${
-                      selectedUser?.id === u.id
-                        ? `${activeBg} border-l-2 border-blue-500`
-                        : `border-l-2 border-transparent ${hoverBg}`
+                    className={`w-full text-left px-2.5 py-2 rounded-lg border-l-2 transition-all animate-in fade-in slide-in-from-left-1 fill-mode-both ${
+                      active ? 'border-blue-500 bg-blue-500/10' : `border-transparent ${ui.hoverRow}`
                     }`}
+                    style={{ animationDelay: `${Math.min(idx, 12) * 25}ms` }}
                   >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                        style={{ backgroundColor: BLUE_SHADES[idx % BLUE_SHADES.length] }}
-                      >
-                        {u.name?.charAt(0)?.toUpperCase() || 'U'}
-                      </div>
+                    <div className="flex items-center gap-2.5">
+                      <Avatar name={u.name} />
                       <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-medium ${textColor} truncate`}>{u.name}</p>
-                        <p className={`text-[10px] ${textMuted} truncate`}>{u.email}</p>
+                        <p className={`text-sm font-medium ${ui.text} truncate`}>{u.name}</p>
+                        <p className={`text-[11px] ${ui.muted} truncate`}>{u.email}</p>
                       </div>
-                      <span className={`shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${getRoleBadge(u.role)}`}>
-                        {u.role || 'user'}
-                      </span>
+                      <Badge tone={roleTone(u.role)}>{u.role || '-'}</Badge>
                     </div>
                   </button>
-                ))
-              )}
-            </CardContent>
-          </Card>
+                );
+              })
+            )}
+          </div>
+        </Card>
 
-          {/* Client Management */}
-          <Card className={`md:col-span-2 ${cardBg} ${borderColor} border`}>
-            <CardHeader className="p-3 pb-1">
-              {selectedUser ? (
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                      style={{ backgroundColor: BLUE_SHADES[usersList.findIndex((u: any) => u.id === selectedUser.id) % BLUE_SHADES.length] }}
-                    >
-                      {selectedUser.name?.charAt(0)?.toUpperCase() || 'U'}
+        {/* Client access for selected user */}
+        <Card className="md:col-span-2 p-4">
+          {selectedUser ? (
+            <div key={selectedUser.id} className="animate-in fade-in duration-300">
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+                <div className="flex items-center gap-3">
+                  <Avatar name={selectedUser.name} size="lg" />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className={`text-base font-semibold ${ui.text}`}>{selectedUser.name}</h2>
+                      <Badge tone={roleTone(selectedUser.role)}>{selectedUser.role || '-'}</Badge>
                     </div>
-                    <div>
-                      <CardTitle className={`text-xs font-medium ${textColor}`}>{selectedUser.name}</CardTitle>
-                      <span className={`inline-block mt-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${getRoleBadge(selectedUser.role)}`}>
-                        {selectedUser.role || 'user'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className={`text-[10px] font-medium ${textColor}`}>
-                      {userClients.length} / {clientsList.length} clients
-                    </span>
-                    <div className="w-28 mt-1">
-                      <AnimatedProgress value={userClients.length} max={Math.max(clientsList.length, 1)} color="bg-blue-500" duration={800} />
-                    </div>
+                    <p className={`text-xs ${ui.muted}`}>{selectedUser.email}</p>
                   </div>
                 </div>
-              ) : (
-                <CardTitle className={`text-xs font-medium ${textColor}`}>Select a user</CardTitle>
-              )}
-            </CardHeader>
-            <CardContent className="p-3 pt-2">
-              {selectedUser ? (
-                <div>
-                  {/* Assigned Clients */}
-                  <div className="mb-4">
-                    <p className={`text-[10px] font-semibold uppercase tracking-wide ${textMuted} mb-1.5`}>Assigned Clients</p>
-                    {userClients.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {userClients.map((id) => {
-                          const client = clientsList.find((c: any) => c.id === id);
-                          return client ? (
-                            <div key={id} className={`flex items-center gap-1.5 pl-2 pr-1 py-1 ${isDark ? 'bg-green-500/10' : 'bg-green-50'} border border-green-500/20 rounded-full text-xs`}>
-                              <Building2 className="h-3 w-3 text-green-500 shrink-0" />
-                              <span className={textColor}>{client.client_name}</span>
-                              <button
-                                onClick={() => handleRemoveClient(id)}
-                                className="p-0.5 rounded-full text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
-                                aria-label={`Remove ${client.client_name}`}
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ) : null;
-                        })}
-                      </div>
-                    ) : (
-                      <p className={`text-xs ${textMuted} italic`}>No clients assigned yet</p>
+                <div className="w-48">
+                  <div className="flex justify-between text-[11px] mb-1">
+                    <span className={ui.muted}>Client access</span>
+                    <span className={`${ui.text} font-medium`}>{userClients.length} / {clientsList.length}</span>
+                  </div>
+                  <div className={`h-1.5 rounded-full ${ui.isDark ? 'bg-white/10' : 'bg-gray-200'} overflow-hidden`}>
+                    <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-700" style={{ width: `${coverage}%` }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Assigned */}
+              <div className="mb-5">
+                <div className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${ui.muted} mb-2`}>
+                  Has access to {loadingUserClients && <Spinner className="h-3 w-3" />}
+                </div>
+                {userClients.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {userClients.map((id) => {
+                      const client = clientsList.find((c: any) => c.id === id);
+                      return client ? (
+                        <span
+                          key={id}
+                          className="group/chip inline-flex items-center gap-1.5 pl-1 pr-1 py-1 rounded-full text-xs bg-emerald-500/10 ring-1 ring-inset ring-emerald-500/25 animate-in fade-in zoom-in-95"
+                        >
+                          <Avatar name={client.client_name} size="sm" />
+                          <span className={ui.text}>{client.client_name}</span>
+                          <button
+                            onClick={() => handleRemoveClient(id)}
+                            disabled={busyClientId === id}
+                            className="p-1 rounded-full text-red-400 opacity-60 group-hover/chip:opacity-100 hover:bg-red-500/15 transition disabled:opacity-40"
+                            aria-label={`Remove ${client.client_name}`}
+                            title="Remove access"
+                          >
+                            {busyClientId === id ? <Spinner className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                          </button>
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                ) : (
+                  <p className={`text-xs ${ui.muted} italic`}>No clients assigned yet. Pick some from below.</p>
+                )}
+              </div>
+
+              {/* Available */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className={`text-[11px] font-semibold uppercase tracking-wide ${ui.muted}`}>Available clients</p>
+                  <span className={`text-[11px] ${ui.muted}`}>{availableClients.length}</span>
+                </div>
+                <div className="relative mb-3">
+                  <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${ui.muted}`} />
+                  <input
+                    type="text"
+                    placeholder="Search clients…"
+                    className={`w-full pl-8 pr-8 py-2 text-sm ${ui.input}`}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  {searchTerm && (
+                    <button onClick={() => setSearchTerm('')} className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 ${ui.muted} hover:text-red-400`}>
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                <div className={`p-3 rounded-xl border ${ui.border} ${ui.isDark ? 'bg-white/[0.02]' : 'bg-gray-50/60'}`}>
+                  <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto" style={ui.colorScheme}>
+                    {availableClients.map((client: any) => (
+                      <button
+                        key={client.id}
+                        onClick={() => handleAssignClient(client.id)}
+                        disabled={busyClientId === client.id}
+                        className={`inline-flex items-center gap-1.5 pl-1 pr-2 py-1 ${ui.card} border ${ui.border} hover:border-blue-500/50 hover:bg-blue-500/10 hover:-translate-y-0.5 rounded-full text-xs transition-all disabled:opacity-50`}
+                      >
+                        <Avatar name={client.client_name} size="sm" />
+                        <span className={ui.text}>{client.client_name}</span>
+                        {busyClientId === client.id ? <Spinner className="h-3 w-3 text-blue-400" /> : <Plus className="h-3 w-3 text-blue-400" />}
+                      </button>
+                    ))}
+                    {availableClients.length === 0 && (
+                      <p className={`text-xs ${ui.muted} py-1`}>
+                        {searchTerm ? 'No matching clients' : 'All clients assigned 🎉'}
+                      </p>
                     )}
                   </div>
-
-                  {/* Available Clients */}
-                  <div>
-                    <p className={`text-[10px] font-semibold uppercase tracking-wide ${textMuted} mb-1.5`}>Available Clients</p>
-                    <div className="relative mb-2">
-                      <Search className={`absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${textMuted}`} />
-                      <input
-                        type="text"
-                        placeholder="Search clients..."
-                        className={`w-full pl-7 pr-2 py-1.5 text-xs ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} ${placeholder}`}
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                      />
-                    </div>
-                    <div className={`p-2 rounded-lg border ${borderColor} ${isDark ? 'bg-white/[0.02]' : 'bg-gray-50/60'}`}>
-                      <div className="flex flex-wrap gap-1.5 max-h-[140px] overflow-y-auto">
-                        {filteredClients
-                          .filter((c: any) => !userClients.includes(c.id))
-                          .map((client: any) => (
-                            <button
-                              key={client.id}
-                              onClick={() => handleAssignClient(client.id)}
-                              className={`flex items-center gap-1 pl-2 pr-1.5 py-1 ${cardBg} hover:bg-blue-500/10 border ${borderColor} hover:border-blue-500/40 rounded-full text-xs transition-colors`}
-                            >
-                              <Building2 className={`h-3 w-3 ${textMuted}`} />
-                              <span className={textColor}>{client.client_name}</span>
-                              <Plus className="h-3 w-3 text-blue-400" />
-                            </button>
-                          ))}
-                        {filteredClients.filter((c: any) => !userClients.includes(c.id)).length === 0 && (
-                          <p className={`text-xs ${textMuted} py-1`}>
-                            {searchTerm ? 'No matching clients' : 'All clients assigned'}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
                 </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Users className={`h-8 w-8 mx-auto ${textMuted} mb-2 opacity-40`} />
-                  <p className={`text-sm ${textMuted}`}>Select a user to manage their client access</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+              </div>
+            </div>
+          ) : (
+            <div className="py-16">
+              <EmptyState icon={Users} title="Select a user" hint="Pick someone on the left to manage their client access." />
+            </div>
+          )}
+        </Card>
       </div>
+
+      {/* Create user */}
+      <Modal
+        open={isDialogOpen}
+        onClose={() => !creating && setIsDialogOpen(false)}
+        title="Create New User"
+        footer={
+          <>
+            <GhostButton onClick={() => setIsDialogOpen(false)} disabled={creating}>Cancel</GhostButton>
+            <GradientButton type="submit" form="create-user-form" disabled={creating}>
+              {creating ? <Spinner /> : <UserPlus className="h-4 w-4" />}
+              Create User
+            </GradientButton>
+          </>
+        }
+      >
+        <form id="create-user-form" onSubmit={handleCreateUser} className="space-y-4">
+          <Field label="Name *">
+            <input
+              className={`w-full px-3 py-2 text-sm ${ui.input}`}
+              value={newUser.name}
+              onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+              required
+              autoFocus
+            />
+          </Field>
+          <Field label="Email *">
+            <input
+              type="email"
+              className={`w-full px-3 py-2 text-sm ${ui.input}`}
+              value={newUser.email}
+              onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Password *" hint="At least 6 characters">
+            <input
+              type="password"
+              className={`w-full px-3 py-2 text-sm ${ui.input}`}
+              value={newUser.password}
+              onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+              required
+              minLength={6}
+            />
+          </Field>
+          <Field label="Role">
+            <div className="grid grid-cols-3 gap-2">
+              {ROLES.map((role) => (
+                <button
+                  key={role}
+                  type="button"
+                  onClick={() => setNewUser({ ...newUser, role })}
+                  className={`px-3 py-2 text-xs rounded-lg border transition ${
+                    newUser.role === role
+                      ? 'border-blue-500 bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/40'
+                      : `${ui.border} ${ui.textSoft} ${ui.hoverBtn}`
+                  }`}
+                >
+                  {role}
+                </button>
+              ))}
+            </div>
+          </Field>
+        </form>
+      </Modal>
     </div>
   );
 }

@@ -1,15 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/lib/providers/ThemeProvider';
 import { AnimatedNumber } from '@/components/ui/animated-number';
-import { AnimatedProgress } from '@/components/ui/animated-progress';
-import { 
-  TrendingUp, DollarSign, Users, Receipt, RefreshCw, 
-  BarChart3, PieChart, Activity, Zap, Clock,
-  TrendingDown, Building2, Calendar
+import {
+  TrendingUp, IndianRupee, Users, Receipt, RefreshCw, BarChart3, Activity, Zap, Clock,
+  TrendingDown, Calendar, Search, X, ChevronUp, ChevronDown, Sparkles, AlertTriangle,
 } from 'lucide-react';
 import {
   Area,
@@ -28,25 +26,18 @@ import {
   ComposedChart,
   Line
 } from 'recharts';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { API_URL } from '@/lib/api';
+import { useUi, Card, Avatar, Badge, EmptyState, PageSkeleton, type BadgeTone } from '@/components/app/ui';
 
 // Minimal blue shades for charts
-const BLUE_SHADES = ['#3b82f6', '#60a5fa', '#93c5fd', '#2563eb', '#1d4ed8', '#bfdbfe', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0284c7'];
-const PIE_COLORS = ['#3b82f6', '#93c5fd'];
+const BLUE_SHADES = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#6366f1', '#14b8a6', '#f97316', '#64748b'];
+const PIE_COLORS = ['#3b82f6', '#a855f7'];
+const pctTone = (pct: number): BadgeTone => (pct >= 20 ? 'green' : pct >= 0 ? 'amber' : 'red');
+
+// Animated counter that keeps decimals (the stock one floors to an integer).
+const Pct = ({ value, className = '' }: { value: number; className?: string }) => (
+  <AnimatedNumber value={Math.round((value || 0) * 10)} duration={900} format={(v) => `${(v / 10).toFixed(1)}%`} className={className} />
+);
 // Financial year month order (Apr through Mar)
 const FY_MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'] as const;
 
@@ -60,6 +51,14 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [expenseFilter, setExpenseFilter] = useState('all');
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [trendMode, setTrendMode] = useState<'both' | 'revenue' | 'margin'>('both');
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientSort, setClientSort] = useState<{ key: 'client_name' | 'revenue' | 'vendor' | 'margin' | 'margin_pct'; dir: 'asc' | 'desc' }>({ key: 'revenue', dir: 'desc' });
+  const [monthlySearch, setMonthlySearch] = useState('');
+  const [activeVendor, setActiveVendor] = useState<number | null>(null);
+  const [activeClient, setActiveClient] = useState<number | null>(null);
+  const ui = useUi();
 
   const bgColor = isDark ? 'bg-[#0b0e1a]' : 'bg-gray-50';
   const textColor = isDark ? 'text-white' : 'text-gray-900';
@@ -99,6 +98,7 @@ export default function DashboardPage() {
 
       const data = await res.json();
       setDashboardData(Array.isArray(data) ? data : []);
+      setLastUpdated(new Date());
     } catch (err: any) {
       console.error('Dashboard error:', err);
       setError(err.message || 'Failed to load dashboard');
@@ -428,817 +428,664 @@ export default function DashboardPage() {
     monthlyTotals,
   } = processData();
 
-  const currentYear = new Date().getFullYear();
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const fyStartYear = now.getMonth() >= 3 ? currentYear : currentYear - 1;
+  const fyLabel = `FY ${fyStartYear}-${String(fyStartYear + 1).slice(-2)}`;
 
   // Billed columns cover the FY-to-date (past + current month); Projected
   // columns cover the rest of the year (current + future months). FY_MONTHS
   // starts at Apr, so shift JS's Jan-based month index (0-11) by 9.
-  const currentFYMonthIndex = (new Date().getMonth() + 9) % 12;
+  const currentFYMonthIndex = (now.getMonth() + 9) % 12;
   const billedMonths = FY_MONTHS.slice(0, currentFYMonthIndex + 1);
   const projectedMonths = FY_MONTHS.slice(currentFYMonthIndex);
 
+  const tickStyle = { fontSize: 11, fill: chartTickColor };
   const tooltipStyle = {
-    backgroundColor: tooltipBg,
+    backgroundColor: isDark ? '#1b2033' : tooltipBg,
     borderColor: tooltipBorder,
     color: tooltipText,
-    fontSize: '10px',
-    borderRadius: '8px',
-    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+    fontSize: '12px',
+    borderRadius: '10px',
+    boxShadow: '0 8px 24px -8px rgba(0, 0, 0, 0.35)',
   };
+  const legendText = (value: ReactNode) => <span style={{ color: chartTickColor }}>{value}</span>;
+  const cursorFill = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
-      </div>
-    );
+  if (isLoading && dashboardData.length === 0) {
+    return <PageSkeleton stats={4} rows={6} />;
   }
 
   if (error) {
     return (
-      <div className={`p-4 text-center ${textColor}`}>
-        <p className="text-red-500">{error}</p>
-        <button
-          onClick={fetchData}
-          className={`mt-2 text-sm ${textMuted} hover:text-white/80 transition`}
-        >
-          Retry
-        </button>
-      </div>
+      <Card className="p-10">
+        <EmptyState
+          icon={AlertTriangle}
+          title="Couldn't load the dashboard"
+          hint={error}
+          action={<button onClick={fetchData} className="mt-1 text-xs text-blue-400 hover:underline">Try again</button>}
+        />
+      </Card>
     );
   }
 
+  const billedShare = total.amt > 0 ? (billed.amt / total.amt) * 100 : 0;
+
+  // Detailed client table: search + sort on top of the Billed/Projected/All filter.
+  const clientRows = clientData
+    .filter((c: any) => !clientSearch || (c.client_name || '').toLowerCase().includes(clientSearch.toLowerCase()))
+    .sort((a: any, b: any) => {
+      const av = a[clientSort.key] ?? 0;
+      const bv = b[clientSort.key] ?? 0;
+      const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+      return clientSort.dir === 'asc' ? cmp : -cmp;
+    });
+  const maxRevenue = Math.max(...clientRows.map((c: any) => c.revenue || 0), 1);
+  const sortBy = (key: typeof clientSort.key) =>
+    setClientSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }));
+
+  const monthlyRows = monthlyClientData.filter(
+    (c: any) => !monthlySearch || (c.client_name || '').toLowerCase().includes(monthlySearch.toLowerCase())
+  );
+
+  const clientShare = top10Clients.map((c: any) => ({ name: c.client_name, value: c.revenue || c.total_revenue || 0 }));
+  const clientShareTotal = clientShare.reduce((s: number, c: any) => s + c.value, 0) || 1;
+  const vendorTotal = vendorData.reduce((s: number, v: any) => s + v.value, 0) || 1;
+
+  const maxMargin = Math.max(...quarterlyData.map((x: any) => x.margin || 0), 1);
+
   return (
-    <div className={`min-h-screen ${bgColor} transition-colors duration-300 p-4`}>
-      <div className="max-w-7xl mx-auto space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+    <div className="max-w-7xl mx-auto space-y-5">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1 duration-300">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <Sparkles className="h-5 w-5 text-white" />
+          </div>
           <div>
-            <h1 className={`text-lg font-semibold ${textColor}`}>Margin Monitor</h1>
-            <p className={`text-xs ${textMuted}`}>Billing & Finance Platform · Management Dashboard</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className={`flex items-center gap-1 px-2 py-1 ${isDark ? 'bg-white/5' : 'bg-gray-100'} rounded-lg`}>
-              <Clock className={`h-3.5 w-3.5 ${textMuted}`} />
-              <span className={`text-xs ${textMuted}`}>Updated: Just now</span>
-            </div>
-            <div className={`flex items-center gap-1 px-2 py-1 ${isDark ? 'bg-white/5' : 'bg-gray-100'} rounded-lg`}>
-              <Calendar className="h-3.5 w-3.5 text-blue-400" />
-              <span className={`text-xs ${textMuted}`}>FY 2026-27</span>
-            </div>
-            <button
-              onClick={fetchData}
-              className={`p-2 rounded-lg ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'} transition-colors`}
-            >
-              <RefreshCw className={`h-4 w-4 ${textMuted}`} />
-            </button>
+            <h1 className={`text-2xl font-semibold ${textColor}`}>
+              {now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening'}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
+            </h1>
+            <p className={`text-sm ${textMuted}`}>Here&apos;s how billing and margins are tracking this financial year</p>
           </div>
         </div>
-
-        {/* Total Revenue - TOP */}
-        <Card className={`${cardBg} ${borderColor} border overflow-hidden relative`}>
-          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2" />
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-blue-500/10 rounded-xl">
-                    <DollarSign className="h-7 w-7 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className={`text-sm ${textMuted}`}>Total Projected Billing</p>
-                    <p className={`text-3xl font-bold ${textColor}`}>
-                      <AnimatedNumber
-                        value={total.amt}
-                        duration={1500}
-                        format={(val) => formatCurrency(val)}
-                      />
-                    </p>
-                    <p className={`text-xs ${textMuted}`}>Margin <AnimatedNumber value={total.pct} duration={1200} format={(val) => val.toFixed(1)} />%</p>
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <AnimatedProgress value={total.mar} max={total.amt} color="bg-blue-500" duration={1500} />
-                </div>
-              </div>
-              <div className="flex items-center gap-6 ml-6">
-                <div className="text-right">
-                  <p className={`text-xs ${textMuted}`}>Total Records</p>
-                  <p className={`text-sm font-semibold ${textColor}`}>
-                    <AnimatedNumber value={totalRecords} duration={1000} />
-                  </p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 3 Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-[9px] rounded shrink-0">A</span>
-                    <p className={`text-xs ${textMuted}`}>Billed</p>
-                  </div>
-                  <div className={`space-y-1.5 text-xs ${textColor}`}>
-                    <div className="flex justify-between items-center">
-                      <span className={textMuted}>Revenue</span>
-                      <span className="font-medium truncate ml-2">
-                        <AnimatedNumber value={billed.amt} duration={1000} format={(val) => formatCurrency(val)} />
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className={textMuted}>Vendor Cost</span>
-                      <span className="font-medium truncate ml-2">
-                        <AnimatedNumber value={billed.ven} duration={1000} format={(val) => formatCurrency(val)} />
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className={textMuted}>Margin</span>
-                      <span className="font-medium text-blue-500 truncate ml-2">
-                        <AnimatedNumber value={billed.mar} duration={1000} format={(val) => formatCurrency(val)} />
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-2 bg-blue-500/10 rounded-lg shrink-0 ml-2">
-                  <Receipt className="h-4 w-4 text-blue-500" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-1.5 py-0.5 bg-blue-300/20 text-blue-300 text-[9px] rounded shrink-0">B</span>
-                    <p className={`text-xs ${textMuted}`}>Projected</p>
-                  </div>
-                  <div className={`space-y-1.5 text-xs ${textColor}`}>
-                    <div className="flex justify-between items-center">
-                      <span className={textMuted}>Revenue</span>
-                      <span className="font-medium truncate ml-2">
-                        <AnimatedNumber value={projected.amt} duration={1000} format={(val) => formatCurrency(val)} />
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className={textMuted}>Vendor Cost</span>
-                      <span className="font-medium truncate ml-2">
-                        <AnimatedNumber value={projected.ven} duration={1000} format={(val) => formatCurrency(val)} />
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className={textMuted}>Margin</span>
-                      <span className="font-medium text-blue-500 truncate ml-2">
-                        <AnimatedNumber value={projected.mar} duration={1000} format={(val) => formatCurrency(val)} />
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-2 bg-blue-300/10 rounded-lg shrink-0 ml-2">
-                  <BarChart3 className="h-4 w-4 text-blue-300" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-1.5 py-0.5 bg-blue-700/20 text-blue-400 text-[9px] rounded shrink-0">C</span>
-                    <p className={`text-xs ${textMuted}`}>Total</p>
-                  </div>
-                  <div className={`space-y-1.5 text-xs ${textColor}`}>
-                    <div className="flex justify-between items-center">
-                      <span className={textMuted}>Revenue</span>
-                      <span className="font-medium truncate ml-2">
-                        <AnimatedNumber value={total.amt} duration={1000} format={(val) => formatCurrency(val)} />
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className={textMuted}>Vendor Cost</span>
-                      <span className="font-medium truncate ml-2">
-                        <AnimatedNumber value={total.ven} duration={1000} format={(val) => formatCurrency(val)} />
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className={textMuted}>Margin</span>
-                      <span className="font-medium text-blue-500 truncate ml-2">
-                        <AnimatedNumber value={total.mar} duration={1000} format={(val) => formatCurrency(val)} />
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-2 bg-blue-700/10 rounded-lg shrink-0 ml-2">
-                  <Activity className="h-4 w-4 text-blue-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* KPI Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardContent className="p-3">
-              <p className={`text-[9px] ${textMuted}`}>Revenue</p>
-              <p className={`text-sm font-bold ${textColor}`}>
-                <AnimatedNumber value={total.amt} duration={1000} format={(val) => formatCurrency(val)} />
-              </p>
-            </CardContent>
-          </Card>
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardContent className="p-3">
-              <p className={`text-[9px] ${textMuted}`}>Margin</p>
-              <p className={`text-sm font-bold text-blue-500`}>
-                <AnimatedNumber value={total.mar} duration={1000} format={(val) => formatCurrency(val)} />
-              </p>
-            </CardContent>
-          </Card>
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardContent className="p-3">
-              <p className={`text-[9px] ${textMuted}`}>Margin %</p>
-              <p className={`text-sm font-bold ${textColor}`}>
-                <AnimatedNumber value={total.pct} duration={1000} format={(val) => val.toFixed(1)} />%
-              </p>
-            </CardContent>
-          </Card>
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardContent className="p-3">
-              <p className={`text-[9px] ${textMuted}`}>Billed Margin %</p>
-              <p className={`text-sm font-bold text-blue-500`}>
-                <AnimatedNumber value={billed.pct} duration={1000} format={(val) => val.toFixed(1)} />%
-              </p>
-            </CardContent>
-          </Card>
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardContent className="p-3">
-              <p className={`text-[9px] ${textMuted}`}>Projected Margin %</p>
-              <p className={`text-sm font-bold text-blue-400`}>
-                <AnimatedNumber value={projected.pct} duration={1000} format={(val) => val.toFixed(1)} />%
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Revenue vs Margin Area Chart */}
-        <Card className={`${cardBg} ${borderColor} border`}>
-          <CardHeader className="p-4 pb-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className={`text-sm font-medium ${textColor}`}>Revenue vs Margin</CardTitle>
-                <CardDescription className={`text-xs ${textMuted}`}>Monthly trend</CardDescription>
-              </div>
-              <div className={`flex items-center gap-1 px-2 py-0.5 ${isDark ? 'bg-white/5' : 'bg-gray-100'} rounded-lg`}>
-                <Zap className="h-3 w-3 text-blue-500" />
-                <span className={`text-[10px] ${textMuted}`}>FY 2026-27</span>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-4 pt-0">
-            <div className="h-[200px] w-full">
-              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 200 }}>
-                <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -10, bottom: 5 }}>
-                  <defs>
-                    <linearGradient id="fillRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05} />
-                    </linearGradient>
-                    <linearGradient id="fillMargin" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#93c5fd" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#93c5fd" stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={chartGridColor} />
-                  <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={6} tick={{ fontSize: 9, fill: chartTickColor }} />
-                  <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: chartTickColor }} width={30} tickFormatter={(value) => `₹${(value / 100000).toFixed(0)}L`} />
-                  <Tooltip contentStyle={tooltipStyle} formatter={(value: any) => `₹${(Number(value) / 100000).toFixed(2)}L`} />
-                  <Area dataKey="revenue" type="monotone" fill="url(#fillRevenue)" stroke="#3b82f6" strokeWidth={2} />
-                  <Area dataKey="margin" type="monotone" fill="url(#fillMargin)" stroke="#93c5fd" strokeWidth={2} />
-                  <Legend wrapperStyle={{ fontSize: '9px' }} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Client Performance & Revenue Split */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          {/* Top 10 Clients by Margin */}
-          <Card className={`lg:col-span-2 ${cardBg} ${borderColor} border`}>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className={`text-xs font-medium ${textColor}`}>Top 10 Clients by Margin</CardTitle>
-              <CardDescription className={`text-[10px] ${textMuted}`}>Vendor Cost · Gross Margin · Margin %</CardDescription>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 300 }}>
-                  <ComposedChart data={top10Clients} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} vertical={false} />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 8, fill: chartTickColor }} angle={-30} textAnchor="end" height={60} />
-                    <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: chartTickColor }} tickFormatter={(value) => formatChartValue(value)} />
-                    <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: '#60a5fa' }} tickFormatter={(value) => `${value}%`} />
-                    <Tooltip contentStyle={tooltipStyle} formatter={(value: any, name: string) => name === 'margin_pct' ? `${value}%` : formatCurrency(Number(value))} />
-                    <Legend wrapperStyle={{ fontSize: '9px' }} />
-                    <Bar yAxisId="left" dataKey="vendor" name="Vendor Cost" stackId="a" fill="#93c5fd" />
-                    <Bar yAxisId="left" dataKey="margin" name="Gross Margin" stackId="a" fill="#3b82f6" />
-                    <Line yAxisId="right" type="monotone" dataKey="margin_pct" name="Margin %" stroke="#1d4ed8" strokeWidth={2} dot={{ fill: '#1d4ed8', r: 3 }} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Revenue Split - Donut Chart */}
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className={`text-xs font-medium ${textColor}`}>Revenue Split</CardTitle>
-              <CardDescription className={`text-[10px] ${textMuted}`}>Billed vs Projected</CardDescription>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="h-[220px] w-full">
-                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 400, height: 240 }}>
-                  <RePieChart>
-                    <Pie
-                      data={revenueSplit}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius="55%"
-                      outerRadius="80%"
-                      dataKey="amount"
-                      nameKey="stage"
-                      label={({ percent, cx, cy, midAngle, innerRadius, outerRadius, index }: any) => {
-                        if (!percent) return null;
-                        const RADIAN = Math.PI / 180;
-                        const radius = Number(innerRadius) + (Number(outerRadius) - Number(innerRadius)) * 0.5;
-                        const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                        const y = cy + radius * Math.sin(-midAngle * RADIAN);
-                        return (
-                          <text
-                            x={x}
-                            y={y}
-                            fill={index === 0 ? '#ffffff' : '#1e3a8a'}
-                            textAnchor="middle"
-                            dominantBaseline="central"
-                            fontSize={11}
-                            fontWeight={600}
-                          >
-                            {`${(percent * 100).toFixed(0)}%`}
-                          </text>
-                        );
-                      }}
-                      labelLine={false}
-                    >
-                      {revenueSplit.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={tooltipStyle} formatter={(value: any) => `₹${(Number(value) / 100000).toFixed(2)}L`} />
-                    <Legend wrapperStyle={{ fontSize: '9px' }} />
-                  </RePieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="text-center mt-0.5">
-                <p className={`text-[10px] ${textMuted}`}>Total Revenue</p>
-                <p className={`text-xs font-bold ${textColor}`}>
-                  <AnimatedNumber value={total.amt} duration={1000} format={(val) => formatCurrency(val)} />
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Vendor Distribution & Revenue Contribution */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className={`text-xs font-medium ${textColor}`}>Vendor Distribution</CardTitle>
-              <CardDescription className={`text-[10px] ${textMuted}`}>Vendor cost share</CardDescription>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="h-[250px] w-full">
-                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 400, height: 240 }}>
-                  <RePieChart>
-                    <Pie
-                      data={vendorData}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      dataKey="value"
-                      label={false}
-                      labelLine={false}
-                    >
-                      {vendorData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={BLUE_SHADES[index % BLUE_SHADES.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={tooltipStyle} formatter={(value: any, name: any, props: any) => [formatCurrency(Number(value)), props.payload.name]} />
-                    <Legend wrapperStyle={{ fontSize: '9px' }} />
-                  </RePieChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className={`${cardBg} ${borderColor} border`}>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className={`text-xs font-medium ${textColor}`}>Client Contribution</CardTitle>
-              <CardDescription className={`text-[10px] ${textMuted}`}>Revenue share — top 10 clients</CardDescription>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="h-[250px] w-full">
-                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 400, height: 240 }}>
-                  <RePieChart>
-                    <Pie
-                      data={top10Clients.map(c => ({ name: c.client_name, value: c.revenue || c.total_revenue }))}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      dataKey="value"
-                      label={false}
-                      labelLine={false}
-                    >
-                      {top10Clients.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={BLUE_SHADES[index % BLUE_SHADES.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={tooltipStyle} formatter={(value: any, name: any, props: any) => [formatCurrency(Number(value)), props.payload.name]} />
-                    <Legend wrapperStyle={{ fontSize: '9px' }} />
-                  </RePieChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Quarterly Performance - 4 KPI Boxes */}
-        <Card className={`${cardBg} ${borderColor} border`}>
-          <CardHeader className="p-4 pb-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className={`text-sm font-medium ${textColor}`}>Quarterly Performance</CardTitle>
-                <CardDescription className={`text-xs ${textMuted}`}>Revenue, Margin &amp; QoQ Growth</CardDescription>
-              </div>
-              <div className={`flex items-center gap-1 px-2 py-0.5 ${isDark ? 'bg-white/5' : 'bg-gray-100'} rounded-lg`}>
-                <Calendar className="h-3 w-3 text-blue-400" />
-                <span className={`text-[10px] ${textMuted}`}>FY 2026-27</span>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-4 pt-0">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {(() => {
-                const maxMargin = Math.max(...quarterlyData.map((x: any) => x.margin || 0), 1);
-                return quarterlyData.map((q: any, idx: number) => {
-                  const isFirst = idx === 0;
-                  const growth = q.growth || 0;
-                  const isPositive = growth >= 0;
-                  const growthClass = isFirst ? textMuted : isPositive ? 'text-green-400' : 'text-red-400';
-                  const isBest = q.margin > 0 && q.margin === maxMargin;
-                  const GrowthIcon = isPositive ? TrendingUp : TrendingDown;
-
-                  return (
-                    <div
-                      key={idx}
-                      className={`relative p-4 rounded-xl border transition-colors ${
-                        isBest
-                          ? isDark
-                            ? 'border-blue-500/40 bg-blue-500/[0.06]'
-                            : 'border-blue-300 bg-blue-50/60'
-                          : `${borderColor} ${isDark ? 'bg-white/[0.02]' : 'bg-gray-50/70'}`
-                      }`}
-                    >
-                      {isBest && (
-                        <span className="absolute top-2.5 right-2.5 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 text-[9px] font-medium">
-                          <Zap className="h-2.5 w-2.5" /> Best
-                        </span>
-                      )}
-
-                      <div className="flex items-center gap-1.5">
-                        <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md text-[9px] font-bold ${isDark ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-100 text-blue-600'}`}>
-                          {q.quarter}
-                        </span>
-                        <span className={`text-[10px] ${textMuted}`}>Margin</span>
-                      </div>
-
-                      <p className={`text-xl font-bold ${textColor} mt-2 leading-none`}>
-                        <AnimatedNumber value={q.margin} duration={1000} format={(val) => formatCurrencyShort(val)} />
-                      </p>
-
-                      <div className="flex items-center justify-between mt-1.5">
-                        <p className={`text-[10px] ${textMuted}`}>
-                          Rev <span className={`font-medium ${textColor}`}>{formatCurrencyShort(q.revenue)}</span>
-                        </p>
-                        <p className={`text-[10px] font-semibold ${growthClass} flex items-center gap-0.5`}>
-                          {!isFirst && <GrowthIcon className="h-2.5 w-2.5" />}
-                          {isFirst ? 'Baseline' : `${Math.abs(growth).toFixed(1)}%`}
-                        </p>
-                      </div>
-
-                      <div className="mt-3">
-                        <AnimatedProgress
-                          value={Math.max(q.margin, 0)}
-                          max={maxMargin}
-                          color={isBest ? 'bg-blue-500' : 'bg-blue-400/60'}
-                          duration={1200}
-                        />
-                        <p className={`text-[9px] ${textMuted} mt-1 text-right`}>
-                          {q.margin_pct.toFixed(1)}% margin
-                        </p>
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* All Clients Table - Without Status Column */}
-        <Card className={`${cardBg} ${borderColor} border`}>
-          <CardHeader className="p-3 pb-1">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className={`text-xs font-medium ${textColor}`}>Detailed Client Performance</CardTitle>
-                <CardDescription className={`text-[10px] ${textMuted}`}>Revenue, Margin &amp; Vendor Cost</CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`hidden sm:inline text-[10px] ${textMuted}`}>
-                  {clientData.length} {clientData.length === 1 ? 'client' : 'clients'}
-                </span>
-                <Select value={expenseFilter} onValueChange={setExpenseFilter}>
-                  <SelectTrigger className="w-[120px] h-7 text-xs">
-                    <SelectValue placeholder="Filter" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="billed">Billed</SelectItem>
-                    <SelectItem value="projected">Projected</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-3 pt-0">
-            <div className="overflow-x-auto max-h-[340px] overflow-y-auto rounded-lg">
-              <table className="w-full text-xs border-separate border-spacing-0">
-                <thead className={`sticky top-0 z-10 ${isDark ? 'bg-[#171b2c]' : 'bg-gray-50'}`}>
-                  <tr>
-                    <th className={`text-[9px] uppercase tracking-wide text-left py-2 pl-2 ${textMuted} border-b ${borderColor}`}>#</th>
-                    <th className={`text-[9px] uppercase tracking-wide text-left py-2 ${textMuted} border-b ${borderColor}`}>Client</th>
-                    <th className={`text-[9px] uppercase tracking-wide text-right py-2 ${textMuted} border-b ${borderColor}`}>Revenue</th>
-                    <th className={`text-[9px] uppercase tracking-wide text-right py-2 ${textMuted} border-b ${borderColor}`}>Vendor Cost</th>
-                    <th className={`text-[9px] uppercase tracking-wide text-right py-2 ${textMuted} border-b ${borderColor}`}>Margin</th>
-                    <th className={`text-[9px] uppercase tracking-wide text-right py-2 pr-2 ${textMuted} border-b ${borderColor}`}>Margin %</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {clientData.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className={`text-center py-8 ${textMuted}`}>
-                        <div className="flex flex-col items-center gap-1.5">
-                          <Users className="h-5 w-5 opacity-40" />
-                          <span className="text-xs">No client data available</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    (() => {
-                      const maxRevenue = Math.max(...clientData.map((c: any) => c.revenue || 0), 1);
-                      return clientData.map((client: any, idx: number) => {
-                        const pct = client.margin_pct || 0;
-                        const isPositive = (client.margin || 0) >= 0;
-                        const revenueShare = Math.min(((client.revenue || 0) / maxRevenue) * 100, 100);
-                        const pctBadgeClass = pct >= 20
-                          ? (isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-100 text-green-700')
-                          : pct >= 0
-                            ? (isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-100 text-amber-700')
-                            : (isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-100 text-red-700');
-                        const GrowthIcon = isPositive ? TrendingUp : TrendingDown;
-
-                        return (
-                          <tr
-                            key={idx}
-                            className={`group border-b ${borderColor} ${idx % 2 === 1 ? (isDark ? 'bg-white/[0.02]' : 'bg-gray-50/50') : ''} hover:${isDark ? 'bg-white/5' : 'bg-blue-50/60'} transition-colors`}
-                          >
-                            <td className={`text-[9px] py-2 pl-2 ${textMuted}`}>{idx + 1}</td>
-                            <td className={`py-2 ${textColor}`}>
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div
-                                  className="flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold text-white shrink-0"
-                                  style={{ backgroundColor: BLUE_SHADES[idx % BLUE_SHADES.length] }}
-                                >
-                                  {(client.client_name || '?').charAt(0).toUpperCase()}
-                                </div>
-                                <span className="text-[10px] truncate max-w-[160px]" title={client.client_name}>
-                                  {client.client_name}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="relative text-right py-2">
-                              <div
-                                className={`absolute inset-y-1.5 right-0 rounded-l ${isDark ? 'bg-blue-500/10' : 'bg-blue-100/70'}`}
-                                style={{ width: `${revenueShare}%` }}
-                              />
-                              <span className={`relative text-[10px] font-medium pr-2 ${textColor}`}>
-                                <AnimatedNumber value={client.revenue || 0} duration={600} format={(val) => formatCurrencyShort(val)} />
-                              </span>
-                            </td>
-                            <td className={`text-[10px] text-right py-2 ${textMuted}`}>
-                              <AnimatedNumber value={client.vendor || 0} duration={600} format={(val) => formatCurrencyShort(val)} />
-                            </td>
-                            <td className={`text-[10px] text-right py-2 font-semibold ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                              <span className="inline-flex items-center gap-0.5">
-                                <GrowthIcon className="h-2.5 w-2.5" />
-                                <AnimatedNumber value={client.margin || 0} duration={600} format={(val) => formatCurrencyShort(val)} />
-                              </span>
-                            </td>
-                            <td className="text-right py-2 pr-2">
-                              <span className={`inline-block px-1.5 py-0.5 rounded-full text-[9px] font-semibold ${pctBadgeClass}`}>
-                                <AnimatedNumber value={pct} duration={600} format={(val) => val.toFixed(1)} />%
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      });
-                    })()
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Monthly Client Breakdown - Billed (FY-to-date) / Projected (current + future) */}
-        <Card className={`${cardBg} ${borderColor} border`}>
-          <CardHeader className="p-3 pb-1">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div>
-                <CardTitle className={`text-xs font-medium ${textColor}`}>Monthly Client Breakdown</CardTitle>
-                <CardDescription className={`text-[10px] ${textMuted}`}>Billed through the current month, Projected for the rest of FY (Apr-Mar)</CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded ${isDark ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-100 text-orange-700'}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isDark ? 'bg-orange-400' : 'bg-orange-500'}`} /> Billed
-                </span>
-                <span className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded ${isDark ? 'bg-green-500/10 text-green-300' : 'bg-green-100 text-green-700'}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isDark ? 'bg-green-400' : 'bg-green-500'}`} /> Projected
-                </span>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-3 pt-0">
-            <p className={`text-[9px] ${textMuted} mb-1.5 sm:hidden`}>Scroll horizontally to see all months →</p>
-            <div className="overflow-x-auto max-h-[420px] overflow-y-auto rounded-lg border-collapse">
-              <table className="w-full text-xs border-collapse">
-                <thead className="sticky top-0 z-20">
-                  <tr>
-                    <th rowSpan={3} className={`sticky left-0 z-30 text-[9px] text-left py-2 pl-2 pr-3 align-bottom ${cardBg} ${textMuted} border-b border-r ${borderColor}`}>Client</th>
-                    <th colSpan={billedMonths.length * 2 + 2} className={`text-[9px] text-center py-1.5 ${textColor} font-semibold border-b border-l-2 ${borderColor} ${isDark ? 'bg-orange-500/10 border-l-orange-400/60' : 'bg-orange-50 border-l-orange-400'}`}>
-                      <span className="inline-flex items-center gap-1"><Receipt className="h-2.5 w-2.5" /> Billed</span>
-                    </th>
-                    <th colSpan={projectedMonths.length * 2 + 2} className={`text-[9px] text-center py-1.5 ${textColor} font-semibold border-b border-l-2 ${borderColor} ${isDark ? 'bg-green-500/10 border-l-green-400/60' : 'bg-green-50 border-l-green-400'}`}>
-                      <span className="inline-flex items-center gap-1"><BarChart3 className="h-2.5 w-2.5" /> Projected</span>
-                    </th>
-                  </tr>
-                  <tr>
-                    {billedMonths.map((m, i) => (
-                      <th key={`bm-${m}`} colSpan={2} className={`text-[9px] text-center py-1 px-2 font-medium ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-orange-500/10 ${i === 0 ? 'border-l-orange-400/60' : ''}` : `bg-orange-50 ${i === 0 ? 'border-l-orange-400' : ''}`}`}>{m}</th>
-                    ))}
-                    <th rowSpan={2} className={`text-[9px] text-right py-2 px-2 align-bottom border-b border-l ${borderColor} ${isDark ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-50 text-orange-700'}`}>Total Billed</th>
-                    <th rowSpan={2} className={`text-[9px] text-right py-2 px-2 align-bottom border-b ${borderColor} ${isDark ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-50 text-orange-700'}`}>Total GM</th>
-                    {projectedMonths.map((m, i) => (
-                      <th key={`pm-${m}`} colSpan={2} className={`text-[9px] text-center py-1 px-2 font-medium ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-green-500/10 ${i === 0 ? 'border-l-green-400/60' : ''}` : `bg-green-50 ${i === 0 ? 'border-l-green-400' : ''}`}`}>{m}</th>
-                    ))}
-                    <th rowSpan={2} className={`text-[9px] text-right py-2 px-2 align-bottom border-b border-l ${borderColor} ${isDark ? 'bg-green-500/10 text-green-300' : 'bg-green-50 text-green-700'}`}>Total Projected</th>
-                    <th rowSpan={2} className={`text-[9px] text-right py-2 px-2 align-bottom border-b ${borderColor} ${isDark ? 'bg-green-500/10 text-green-300' : 'bg-green-50 text-green-700'}`}>Total GM</th>
-                  </tr>
-                  <tr>
-                    {billedMonths.flatMap((m, i) => [
-                      <th key={`bl-${m}-billed`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-orange-500/10 ${i === 0 ? 'border-l-orange-400/60' : ''}` : `bg-orange-50 ${i === 0 ? 'border-l-orange-400' : ''}`}`}>Billed</th>,
-                      <th key={`bl-${m}-gm`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} ${isDark ? 'bg-orange-500/10' : 'bg-orange-50'} border-b ${borderColor}`}>GM</th>,
-                    ])}
-                    {projectedMonths.flatMap((m, i) => [
-                      <th key={`pl-${m}-projected`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-green-500/10 ${i === 0 ? 'border-l-green-400/60' : ''}` : `bg-green-50 ${i === 0 ? 'border-l-green-400' : ''}`}`}>Projected</th>,
-                      <th key={`pl-${m}-gm`} className={`text-[9px] text-right py-1 px-2 font-normal ${textMuted} ${isDark ? 'bg-green-500/10' : 'bg-green-50'} border-b ${borderColor}`}>GM</th>,
-                    ])}
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthlyClientData.length === 0 ? (
-                    <tr>
-                      <td colSpan={billedMonths.length * 2 + projectedMonths.length * 2 + 4} className={`text-center py-8 ${textMuted}`}>
-                        <div className="flex flex-col items-center gap-1.5">
-                          <Users className="h-5 w-5 opacity-40" />
-                          <span className="text-xs">No client data available</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    monthlyClientData.map((client: any, idx: number) => {
-                      const rowBg = idx % 2 === 1 ? (isDark ? '#161a2b' : '#fafafa') : (isDark ? '#131726' : '#ffffff');
-                      const fmt = (v: number) => (v ? formatCurrencyShort(v) : '–');
-                      return (
-                        <tr key={idx} className={`border-b ${borderColor} hover:${isDark ? 'bg-white/5' : 'bg-blue-50/50'} transition-colors`}>
-                          <td
-                            className={`sticky left-0 z-10 text-[10px] py-1.5 pl-2 pr-3 whitespace-nowrap ${textColor} border-r ${borderColor}`}
-                            style={{ backgroundColor: rowBg }}
-                          >
-                            <div className="flex items-center gap-1.5">
-                              <div
-                                className="flex items-center justify-center w-4 h-4 rounded-full text-[8px] font-bold text-white shrink-0"
-                                style={{ backgroundColor: BLUE_SHADES[idx % BLUE_SHADES.length] }}
-                              >
-                                {(client.client_name || '?').charAt(0).toUpperCase()}
-                              </div>
-                              <span className="truncate max-w-[130px]" title={client.client_name}>{client.client_name}</span>
-                            </div>
-                          </td>
-                          {billedMonths.flatMap((m, i) => [
-                            <td key={`b-${m}`} className={`text-[10px] text-right py-1.5 px-2 ${textColor} ${i === 0 ? 'border-l-2' : ''} ${i === 0 ? (isDark ? 'border-l-orange-400/30' : 'border-l-orange-300') : ''} ${isDark ? 'bg-orange-500/5' : 'bg-orange-50/40'}`}>
-                              {fmt(client.billed[m])}
-                            </td>,
-                            <td key={`bg-${m}`} className={`text-[10px] text-right py-1.5 px-2 font-medium ${client.billedGM[m] > 0 ? 'text-green-400' : client.billedGM[m] < 0 ? 'text-red-400' : textMuted} ${isDark ? 'bg-orange-500/5' : 'bg-orange-50/40'}`}>
-                              {fmt(client.billedGM[m])}
-                            </td>,
-                          ])}
-                          <td className={`text-[10px] text-right py-1.5 px-2 font-semibold border-l ${isDark ? 'bg-orange-500/10' : 'bg-orange-50'} ${textColor}`}>
-                            {fmt(client.totalBilled)}
-                          </td>
-                          <td className={`text-[10px] text-right py-1.5 px-2 font-semibold ${isDark ? 'bg-orange-500/10' : 'bg-orange-50'} ${client.totalBilledGM > 0 ? 'text-green-400' : client.totalBilledGM < 0 ? 'text-red-400' : textMuted}`}>
-                            {fmt(client.totalBilledGM)}
-                          </td>
-                          {projectedMonths.flatMap((m, i) => [
-                            <td key={`p-${m}`} className={`text-[10px] text-right py-1.5 px-2 ${textColor} ${i === 0 ? 'border-l-2' : ''} ${i === 0 ? (isDark ? 'border-l-green-400/30' : 'border-l-green-300') : ''} ${isDark ? 'bg-green-500/5' : 'bg-green-50/40'}`}>
-                              {fmt(client.projected[m])}
-                            </td>,
-                            <td key={`pg-${m}`} className={`text-[10px] text-right py-1.5 px-2 font-medium ${client.projectedGM[m] > 0 ? 'text-green-400' : client.projectedGM[m] < 0 ? 'text-red-400' : textMuted} ${isDark ? 'bg-green-500/5' : 'bg-green-50/40'}`}>
-                              {fmt(client.projectedGM[m])}
-                            </td>,
-                          ])}
-                          <td className={`text-[10px] text-right py-1.5 px-2 font-semibold border-l ${isDark ? 'bg-green-500/10' : 'bg-green-50'} ${textColor}`}>
-                            {fmt(client.totalProjected)}
-                          </td>
-                          <td className={`text-[10px] text-right py-1.5 px-2 font-semibold ${isDark ? 'bg-green-500/10' : 'bg-green-50'} ${client.totalProjectedGM > 0 ? 'text-green-400' : client.totalProjectedGM < 0 ? 'text-red-400' : textMuted}`}>
-                            {fmt(client.totalProjectedGM)}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-                {monthlyClientData.length > 0 && (
-                  <tfoot>
-                    <tr className="sticky bottom-0 z-10 font-semibold">
-                      <td className={`sticky left-0 z-10 text-[10px] py-2 pl-2 pr-3 border-r border-white/10 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'} text-white`}>Total</td>
-                      {billedMonths.flatMap((m) => [
-                        <td key={`tb-${m}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                          {formatCurrencyShort(monthlyTotals.billed[m])}
-                        </td>,
-                        <td key={`tbg-${m}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                          {formatCurrencyShort(monthlyTotals.billedGM[m])}
-                        </td>,
-                      ])}
-                      <td className={`text-[10px] text-right py-2 px-2 text-orange-300 border-l border-white/10 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                        {formatCurrencyShort(monthlyTotals.totalBilled)}
-                      </td>
-                      <td className={`text-[10px] text-right py-2 px-2 text-orange-300 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                        {formatCurrencyShort(monthlyTotals.totalBilledGM)}
-                      </td>
-                      {projectedMonths.flatMap((m) => [
-                        <td key={`tp-${m}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                          {formatCurrencyShort(monthlyTotals.projected[m])}
-                        </td>,
-                        <td key={`tpg-${m}`} className={`text-[10px] text-right py-2 px-2 text-white ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                          {formatCurrencyShort(monthlyTotals.projectedGM[m])}
-                        </td>,
-                      ])}
-                      <td className={`text-[10px] text-right py-2 px-2 text-green-300 border-l border-white/10 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                        {formatCurrencyShort(monthlyTotals.totalProjected)}
-                      </td>
-                      <td className={`text-[10px] text-right py-2 px-2 text-green-300 ${isDark ? 'bg-[#1a1f33]' : 'bg-gray-900'}`}>
-                        {formatCurrencyShort(monthlyTotals.totalProjectedGM)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Footer */}
-        <div className={`text-center py-6 text-[10px] ${textMuted} border-t ${borderColor}`}>
-          Protected by 256-bit encryption · © 2025 Evolve Brands Pvt Ltd
+        <div className="flex items-center gap-2">
+          <span className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs ${ui.subtle} border ${ui.border} ${textMuted}`}>
+            <Clock className="h-3.5 w-3.5" />
+            {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : 'Loading…'}
+          </span>
+          <span className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs ${ui.subtle} border ${ui.border} ${textMuted}`}>
+            <Calendar className="h-3.5 w-3.5 text-blue-400" />
+            {fyLabel}
+          </span>
+          <button
+            onClick={fetchData}
+            disabled={isLoading}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs ${textMuted} ${ui.subtle} border ${ui.border} rounded-lg ${ui.hoverBtn} transition disabled:opacity-60`}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
       </div>
+
+      {/* Hero: total projected billing */}
+      <div className="relative overflow-hidden rounded-2xl p-6 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-500/20 animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <div className="absolute -top-16 -right-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
+        <div className="absolute -bottom-20 left-1/3 h-48 w-48 rounded-full bg-fuchsia-400/20 blur-3xl" />
+        <div className="relative flex flex-wrap items-end justify-between gap-6">
+          <div>
+            <p className="flex items-center gap-2 text-sm text-white/80">
+              <IndianRupee className="h-4 w-4" />
+              Total Projected Billing · {fyLabel}
+            </p>
+            <AnimatedNumber value={total.amt} duration={1500} format={(v) => formatCurrency(v)} className="block text-4xl font-bold mt-1 tracking-tight" />
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2 text-sm text-white/85">
+              <span>Margin <AnimatedNumber value={total.mar} duration={1200} format={(v) => formatCurrency(v)} className="font-semibold text-white" /></span>
+              <span>Margin % <Pct value={total.pct} className="font-semibold text-white" /></span>
+              <span>Vendor cost <span className="font-semibold text-white">{formatCurrency(total.ven)}</span></span>
+              <span className="text-white/60">{totalRecords.toLocaleString('en-IN')} entries</span>
+            </div>
+          </div>
+          <div className="w-full md:w-80">
+            <div className="flex justify-between text-xs text-white/80 mb-1.5">
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-white" />Billed {billedShare.toFixed(0)}%</span>
+              <span className="flex items-center gap-1.5">Projected {(100 - billedShare).toFixed(0)}%<span className="h-2 w-2 rounded-full bg-white/40" /></span>
+            </div>
+            <div className="h-2.5 rounded-full bg-white/20 overflow-hidden">
+              <div className="h-full rounded-full bg-white transition-all duration-1000" style={{ width: `${billedShare}%` }} />
+            </div>
+            <div className="flex justify-between text-xs mt-1.5">
+              <span className="font-medium">{formatCurrencyShort(billed.amt)}</span>
+              <span className="font-medium">{formatCurrencyShort(projected.amt)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Billed / Projected / Total */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[
+          { label: 'Billed', sub: 'Invoiced so far', data: billed, icon: Receipt, ring: '#3b82f6', accent: 'from-blue-500/20' },
+          { label: 'Projected', sub: 'Still to be billed', data: projected, icon: BarChart3, ring: '#a855f7', accent: 'from-purple-500/20' },
+          { label: 'Total', sub: 'Billed + projected', data: total, icon: Activity, ring: '#10b981', accent: 'from-emerald-500/20' },
+        ].map((c, i) => {
+          const pct = Math.max(0, Math.min(100, c.data.pct || 0));
+          return (
+            <div
+              key={c.label}
+              className={`relative overflow-hidden p-5 rounded-xl border ${ui.border} ${cardBg} hover:-translate-y-0.5 hover:shadow-lg ${isDark ? 'hover:shadow-black/30' : 'hover:shadow-gray-200'} transition-all duration-200 animate-in fade-in slide-in-from-bottom-2 fill-mode-both`}
+              style={{ animationDelay: `${100 + i * 70}ms` }}
+            >
+              <div className={`absolute inset-0 bg-gradient-to-br ${c.accent} to-transparent pointer-events-none`} />
+              <div className="relative flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className={`flex items-center gap-1.5 text-sm font-medium ${textColor}`}>
+                    <c.icon className="h-4 w-4" style={{ color: c.ring }} />
+                    {c.label}
+                  </p>
+                  <p className={`text-[11px] ${textMuted}`}>{c.sub}</p>
+                  <AnimatedNumber value={c.data.amt} duration={1000} format={(v) => formatCurrency(v)} className={`block text-2xl font-bold mt-2 ${textColor}`} />
+                </div>
+                {/* Margin % ring */}
+                <div className="relative h-16 w-16 shrink-0">
+                  <svg viewBox="0 0 36 36" className="h-16 w-16 -rotate-90">
+                    <circle cx="18" cy="18" r="15.9" fill="none" strokeWidth="3.2" className={isDark ? 'stroke-white/10' : 'stroke-gray-200'} />
+                    <circle cx="18" cy="18" r="15.9" fill="none" strokeWidth="3.2" strokeLinecap="round" stroke={c.ring}
+                      strokeDasharray={`${pct} 100`} style={{ transition: 'stroke-dasharray 1.2s ease' }} />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
+                    <Pct value={c.data.pct} className={`text-[11px] font-bold ${textColor}`} />
+                    <span className={`text-[8px] ${textMuted} mt-0.5`}>margin</span>
+                  </div>
+                </div>
+              </div>
+              <div className={`relative grid grid-cols-2 gap-3 mt-4 pt-3 border-t ${ui.border} text-xs`}>
+                <div>
+                  <p className={textMuted}>Vendor cost</p>
+                  <p className={`font-semibold ${textColor} tabular-nums`}>{formatCurrency(c.data.ven)}</p>
+                </div>
+                <div>
+                  <p className={textMuted}>Margin</p>
+                  <p className={`font-semibold tabular-nums ${c.data.mar >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatCurrency(c.data.mar)}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Revenue vs Margin trend */}
+      <Section
+        title="Revenue vs Margin"
+        subtitle={`Monthly trend · ${fyLabel}`}
+        right={
+          <Segmented
+            value={trendMode}
+            onChange={(v) => setTrendMode(v as typeof trendMode)}
+            options={[['both', 'Both'], ['revenue', 'Revenue'], ['margin', 'Margin']]}
+          />
+        }
+      >
+        <div className="h-[260px] w-full">
+          <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 260 }}>
+            <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+              <defs>
+                <linearGradient id="fillRevenue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="fillMargin" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#a855f7" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#a855f7" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={chartGridColor} />
+              <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} tick={tickStyle} />
+              <YAxis tickLine={false} axisLine={false} tick={tickStyle} width={50} tickFormatter={(value) => `₹${(value / 100000).toFixed(0)}L`} />
+              <Tooltip contentStyle={tooltipStyle} cursor={{ stroke: chartTickColor, strokeDasharray: '3 3' }} formatter={(value) => `₹${(Number(value) / 100000).toFixed(2)}L`} />
+              {trendMode !== 'margin' && (
+                <Area dataKey="revenue" name="Revenue" type="monotone" fill="url(#fillRevenue)" stroke="#3b82f6" strokeWidth={2.5} activeDot={{ r: 5 }} />
+              )}
+              {trendMode !== 'revenue' && (
+                <Area dataKey="margin" name="Margin" type="monotone" fill="url(#fillMargin)" stroke="#a855f7" strokeWidth={2.5} activeDot={{ r: 5 }} />
+              )}
+              <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendText} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </Section>
+
+      {/* Top clients + revenue split */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Section className="lg:col-span-2" title="Top 10 Clients by Margin" subtitle="Vendor cost + gross margin (stacked) · margin % line">
+          <div className="h-[320px] w-full">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 320 }}>
+              <ComposedChart data={top10Clients} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} vertical={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: chartTickColor }} angle={-30} textAnchor="end" height={64} interval={0} />
+                <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={tickStyle} width={55} tickFormatter={(value) => formatChartValue(value)} />
+                <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#f59e0b' }} tickFormatter={(value) => `${value}%`} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: cursorFill }} formatter={(value, name) => name === 'Margin %' ? `${Number(value).toFixed(1)}%` : formatCurrency(Number(value))} />
+                <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendText} />
+                <Bar yAxisId="left" dataKey="vendor" name="Vendor Cost" stackId="a" fill="#93c5fd" />
+                <Bar yAxisId="left" dataKey="margin" name="Gross Margin" stackId="a" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <Line yAxisId="right" type="monotone" dataKey="margin_pct" name="Margin %" stroke="#f59e0b" strokeWidth={2} dot={{ fill: '#f59e0b', r: 3 }} activeDot={{ r: 5 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </Section>
+
+        <Section title="Revenue Split" subtitle="Billed vs projected">
+          <div className="relative h-[220px] w-full">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 400, height: 220 }}>
+              <RePieChart>
+                <Pie data={revenueSplit} cx="50%" cy="50%" innerRadius="62%" outerRadius="88%" paddingAngle={2} dataKey="amount" nameKey="stage" stroke="none">
+                  {revenueSplit.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={tooltipStyle} formatter={(value) => formatCurrency(Number(value))} />
+              </RePieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span className={`text-[11px] ${textMuted}`}>Total</span>
+              <span className={`text-lg font-bold ${textColor}`}>{formatCurrencyShort(total.amt)}</span>
+            </div>
+          </div>
+          <div className="space-y-2 mt-2">
+            {revenueSplit.map((r, i) => {
+              const share = total.amt > 0 ? (r.amount / total.amt) * 100 : 0;
+              return (
+                <div key={r.stage} className="flex items-center gap-2 text-xs">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: PIE_COLORS[i] }} />
+                  <span className={`flex-1 ${textColor}`}>{r.stage}</span>
+                  <span className={`${textMuted} tabular-nums`}>{share.toFixed(1)}%</span>
+                  <span className={`font-semibold ${textColor} tabular-nums w-20 text-right`}>{formatCurrencyShort(r.amount)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      </div>
+
+      {/* Vendor distribution + client contribution: donut + hoverable ranked list */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[
+          { title: 'Vendor Distribution', subtitle: 'Top 10 vendors by cost', data: vendorData, sum: vendorTotal, active: activeVendor, setActive: setActiveVendor },
+          { title: 'Client Contribution', subtitle: 'Revenue share · top 10 clients', data: clientShare, sum: clientShareTotal, active: activeClient, setActive: setActiveClient },
+        ].map((block) => (
+          <Section key={block.title} title={block.title} subtitle={block.subtitle}>
+            {block.data.length === 0 ? (
+              <div className="py-10"><EmptyState title="No data yet" /></div>
+            ) : (
+              <div className="flex items-center gap-4">
+                <div className="relative h-[150px] w-[150px] xl:h-[180px] xl:w-[180px] shrink-0">
+                  <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 150, height: 150 }}>
+                    <RePieChart>
+                      <Pie
+                        data={block.data}
+                        cx="50%" cy="50%" innerRadius="58%" outerRadius="92%" paddingAngle={1.5}
+                        dataKey="value" stroke="none"
+                        onMouseEnter={(_, i) => block.setActive(i)}
+                        onMouseLeave={() => block.setActive(null)}
+                      >
+                        {block.data.map((_: any, index: number) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={BLUE_SHADES[index % BLUE_SHADES.length]}
+                            opacity={block.active === null || block.active === index ? 1 : 0.25}
+                            style={{ transition: 'opacity 150ms' }}
+                          />
+                        ))}
+                      </Pie>
+                    </RePieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-6 text-center">
+                    {block.active !== null && block.data[block.active] ? (
+                      <>
+                        <span className={`text-lg font-bold ${textColor}`}>{((block.data[block.active].value / block.sum) * 100).toFixed(1)}%</span>
+                        <span className={`text-[10px] ${textMuted} leading-tight line-clamp-2`}>{block.data[block.active].name}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className={`text-[10px] ${textMuted}`}>Total</span>
+                        <span className={`text-sm font-bold ${textColor}`}>{formatCurrencyShort(block.sum)}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <ul className="flex-1 min-w-0 space-y-0.5 max-h-[200px] overflow-y-auto" style={ui.colorScheme}>
+                  {block.data.map((d: any, i: number) => (
+                    <li
+                      key={d.name + i}
+                      onMouseEnter={() => block.setActive(i)}
+                      onMouseLeave={() => block.setActive(null)}
+                      className={`flex items-center gap-2 px-2 py-1 rounded-md text-xs cursor-default transition-colors ${block.active === i ? (isDark ? 'bg-white/5' : 'bg-gray-100') : ''}`}
+                    >
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: BLUE_SHADES[i % BLUE_SHADES.length] }} />
+                      <span className={`flex-1 min-w-0 truncate ${textColor}`} title={d.name}>{d.name}</span>
+                      <span className={`${textMuted} tabular-nums`}>{((d.value / block.sum) * 100).toFixed(0)}%</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Section>
+        ))}
+      </div>
+
+      {/* Quarterly performance */}
+      <Section title="Quarterly Performance" subtitle={`Margin, revenue and quarter-on-quarter growth · ${fyLabel}`}>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {quarterlyData.map((q: any, idx: number) => {
+            const isFirst = idx === 0;
+            const growth = q.growth || 0;
+            const isPositive = growth >= 0;
+            const isBest = q.margin > 0 && q.margin === maxMargin;
+            const GrowthIcon = isPositive ? TrendingUp : TrendingDown;
+            const bar = Math.max(0, Math.min(100, (Math.max(q.margin, 0) / maxMargin) * 100));
+            return (
+              <div
+                key={q.quarter}
+                className={`relative overflow-hidden p-4 rounded-xl border transition-all hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-2 fill-mode-both ${
+                  isBest ? 'border-blue-500/40 bg-gradient-to-br from-blue-500/15 to-purple-500/10' : `${ui.border} ${isDark ? 'bg-white/[0.02]' : 'bg-gray-50/70'}`
+                }`}
+                style={{ animationDelay: `${idx * 70}ms` }}
+              >
+                {isBest && (
+                  <span className="absolute top-3 right-3 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-medium">
+                    <Zap className="h-3 w-3" /> Best
+                  </span>
+                )}
+                <span className={`inline-flex items-center justify-center h-6 px-2 rounded-md text-[11px] font-bold ${isDark ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-100 text-blue-600'}`}>
+                  {q.quarter}
+                </span>
+                <p className={`text-[11px] ${textMuted} mt-3`}>Margin</p>
+                <AnimatedNumber value={q.margin} duration={1000} format={(v) => formatCurrencyShort(v)} className={`block text-2xl font-bold ${textColor} leading-tight`} />
+                <div className="flex items-center justify-between mt-1 text-[11px]">
+                  <span className={textMuted}>Rev <span className={`font-medium ${textColor}`}>{formatCurrencyShort(q.revenue)}</span></span>
+                  <span className={`font-semibold flex items-center gap-0.5 ${isFirst ? textMuted : isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {!isFirst && <GrowthIcon className="h-3 w-3" />}
+                    {isFirst ? 'Baseline' : `${Math.abs(growth).toFixed(1)}%`}
+                  </span>
+                </div>
+                <div className={`mt-3 h-1.5 rounded-full ${isDark ? 'bg-white/10' : 'bg-gray-200'} overflow-hidden`}>
+                  <div className={`h-full rounded-full transition-all duration-1000 ${isBest ? 'bg-gradient-to-r from-blue-500 to-purple-500' : 'bg-blue-400/60'}`} style={{ width: `${bar}%` }} />
+                </div>
+                <p className={`text-[10px] ${textMuted} mt-1 text-right`}>{(q.margin_pct || 0).toFixed(1)}% margin</p>
+              </div>
+            );
+          })}
+        </div>
+      </Section>
+
+      {/* Detailed client performance */}
+      <Section
+        title="Detailed Client Performance"
+        subtitle={`${clientRows.length} ${clientRows.length === 1 ? 'client' : 'clients'} · click a column to sort`}
+        right={
+          <div className="flex flex-wrap items-center gap-2">
+            <MiniSearch value={clientSearch} onChange={setClientSearch} placeholder="Find client…" />
+            <Segmented
+              value={expenseFilter}
+              onChange={setExpenseFilter}
+              options={[['all', 'All'], ['billed', 'Billed'], ['projected', 'Projected']]}
+            />
+          </div>
+        }
+        flush
+      >
+        <div className="overflow-x-auto max-h-[380px] overflow-y-auto" style={ui.colorScheme}>
+          <table className="w-full text-sm border-separate border-spacing-0">
+            <thead className={`sticky top-0 z-10 ${isDark ? 'bg-[#171b2c]' : 'bg-gray-50'}`}>
+              <tr>
+                <th className={`px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide ${textMuted} border-b ${ui.border}`}>#</th>
+                {([
+                  ['client_name', 'Client', 'left'],
+                  ['revenue', 'Revenue', 'right'],
+                  ['vendor', 'Vendor Cost', 'right'],
+                  ['margin', 'Margin', 'right'],
+                  ['margin_pct', 'Margin %', 'right'],
+                ] as const).map(([key, label, align]) => (
+                  <th key={key} className={`px-4 py-2.5 text-${align} text-[11px] font-medium uppercase tracking-wide whitespace-nowrap ${textMuted} border-b ${ui.border}`}>
+                    <button onClick={() => sortBy(key)} className={`inline-flex items-center gap-1 uppercase tracking-wide transition ${isDark ? 'hover:text-white/80' : 'hover:text-gray-800'} ${clientSort.key === key ? (isDark ? 'text-white/80' : 'text-gray-800') : ''}`}>
+                      {label}
+                      {clientSort.key === key
+                        ? (clientSort.dir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)
+                        : <ChevronDown className="h-3 w-3 opacity-30" />}
+                    </button>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {clientRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12"><EmptyState icon={Users} title={clientSearch ? 'No clients match your search' : 'No client data available'} /></td>
+                </tr>
+              ) : (
+                clientRows.map((client: any, idx: number) => {
+                  const pct = client.margin_pct || 0;
+                  const isPositive = (client.margin || 0) >= 0;
+                  const revenueShare = Math.min(((client.revenue || 0) / maxRevenue) * 100, 100);
+                  const GrowthIcon = isPositive ? TrendingUp : TrendingDown;
+                  return (
+                    <tr key={client.client_name} className={`group ${ui.hoverRow} transition-colors`}>
+                      <td className={`px-4 py-2.5 text-xs ${textMuted} border-b ${ui.rowBorder} border-l-2 border-l-transparent group-hover:border-l-blue-500 transition-colors`}>{idx + 1}</td>
+                      <td className={`px-4 py-2.5 border-b ${ui.rowBorder}`}>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Avatar name={client.client_name} size="sm" />
+                          <span className={`text-sm ${textColor} truncate max-w-[220px]`} title={client.client_name}>{client.client_name}</span>
+                        </div>
+                      </td>
+                      <td className={`relative px-4 py-2.5 text-right border-b ${ui.rowBorder}`}>
+                        <div className={`absolute inset-y-2 right-0 rounded-l ${isDark ? 'bg-blue-500/10' : 'bg-blue-100/70'} transition-all duration-700`} style={{ width: `${revenueShare}%` }} />
+                        <span className={`relative text-sm font-semibold ${textColor} tabular-nums`}>{formatCurrencyShort(client.revenue || 0)}</span>
+                      </td>
+                      <td className={`px-4 py-2.5 text-right text-sm ${textMuted} tabular-nums border-b ${ui.rowBorder}`}>{formatCurrencyShort(client.vendor || 0)}</td>
+                      <td className={`px-4 py-2.5 text-right text-sm font-semibold tabular-nums border-b ${ui.rowBorder} ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <span className="inline-flex items-center gap-0.5">
+                          <GrowthIcon className="h-3 w-3" />
+                          {formatCurrencyShort(client.margin || 0)}
+                        </span>
+                      </td>
+                      <td className={`px-4 py-2.5 text-right border-b ${ui.rowBorder}`}><Badge tone={pctTone(pct)}>{pct.toFixed(1)}%</Badge></td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      {/* Monthly client breakdown - Billed (FY-to-date) / Projected (current + future) */}
+      <Section
+        title="Monthly Client Breakdown"
+        subtitle="Billed through the current month, projected for the rest of the FY (Apr–Mar)"
+        right={
+          <div className="flex flex-wrap items-center gap-2">
+            <MiniSearch value={monthlySearch} onChange={setMonthlySearch} placeholder="Find client…" />
+            <span className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md ${isDark ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-100 text-orange-700'}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-400" /> Billed
+            </span>
+            <span className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md ${isDark ? 'bg-emerald-500/10 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Projected
+            </span>
+          </div>
+        }
+        flush
+      >
+        <p className={`text-[11px] ${textMuted} px-4 pb-2 sm:hidden`}>Scroll horizontally to see all months →</p>
+        <div className="overflow-x-auto max-h-[460px] overflow-y-auto" style={ui.colorScheme}>
+          <table className="w-full text-xs border-collapse">
+            <thead className="sticky top-0 z-20">
+              <tr>
+                <th rowSpan={3} className={`sticky left-0 z-30 text-[11px] text-left py-2 pl-4 pr-3 align-bottom ${cardBg} ${textMuted} border-b border-r ${borderColor}`}>Client</th>
+                <th colSpan={billedMonths.length * 2 + 2} className={`text-[11px] text-center py-1.5 ${textColor} font-semibold border-b border-l-2 ${borderColor} ${isDark ? 'bg-orange-500/10 border-l-orange-400/60' : 'bg-orange-50 border-l-orange-400'}`}>
+                  <span className="inline-flex items-center gap-1"><Receipt className="h-3 w-3" /> Billed</span>
+                </th>
+                <th colSpan={projectedMonths.length * 2 + 2} className={`text-[11px] text-center py-1.5 ${textColor} font-semibold border-b border-l-2 ${borderColor} ${isDark ? 'bg-emerald-500/10 border-l-emerald-400/60' : 'bg-emerald-50 border-l-emerald-400'}`}>
+                  <span className="inline-flex items-center gap-1"><BarChart3 className="h-3 w-3" /> Projected</span>
+                </th>
+              </tr>
+              <tr>
+                {billedMonths.map((m, i) => (
+                  <th key={`bm-${m}`} colSpan={2} className={`text-[11px] text-center py-1 px-2 font-medium ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-orange-500/10 ${i === 0 ? 'border-l-orange-400/60' : ''}` : `bg-orange-50 ${i === 0 ? 'border-l-orange-400' : ''}`}`}>{m}</th>
+                ))}
+                <th rowSpan={2} className={`text-[11px] text-right py-2 px-2 align-bottom border-b border-l ${borderColor} ${isDark ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-50 text-orange-700'}`}>Total Billed</th>
+                <th rowSpan={2} className={`text-[11px] text-right py-2 px-2 align-bottom border-b ${borderColor} ${isDark ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-50 text-orange-700'}`}>Total GM</th>
+                {projectedMonths.map((m, i) => (
+                  <th key={`pm-${m}`} colSpan={2} className={`text-[11px] text-center py-1 px-2 font-medium ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-emerald-500/10 ${i === 0 ? 'border-l-emerald-400/60' : ''}` : `bg-emerald-50 ${i === 0 ? 'border-l-emerald-400' : ''}`}`}>{m}</th>
+                ))}
+                <th rowSpan={2} className={`text-[11px] text-right py-2 px-2 align-bottom border-b border-l ${borderColor} ${isDark ? 'bg-emerald-500/10 text-emerald-300' : 'bg-emerald-50 text-emerald-700'}`}>Total Projected</th>
+                <th rowSpan={2} className={`text-[11px] text-right py-2 px-2 align-bottom border-b ${borderColor} ${isDark ? 'bg-emerald-500/10 text-emerald-300' : 'bg-emerald-50 text-emerald-700'}`}>Total GM</th>
+              </tr>
+              <tr>
+                {billedMonths.flatMap((m, i) => [
+                  <th key={`bl-${m}-billed`} className={`text-[10px] text-right py-1 px-2 font-normal ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-orange-500/10 ${i === 0 ? 'border-l-orange-400/60' : ''}` : `bg-orange-50 ${i === 0 ? 'border-l-orange-400' : ''}`}`}>Billed</th>,
+                  <th key={`bl-${m}-gm`} className={`text-[10px] text-right py-1 px-2 font-normal ${textMuted} ${isDark ? 'bg-orange-500/10' : 'bg-orange-50'} border-b ${borderColor}`}>GM</th>,
+                ])}
+                {projectedMonths.flatMap((m, i) => [
+                  <th key={`pl-${m}-projected`} className={`text-[10px] text-right py-1 px-2 font-normal ${textMuted} border-b ${i === 0 ? 'border-l-2' : 'border-l'} ${borderColor} ${isDark ? `bg-emerald-500/10 ${i === 0 ? 'border-l-emerald-400/60' : ''}` : `bg-emerald-50 ${i === 0 ? 'border-l-emerald-400' : ''}`}`}>Projected</th>,
+                  <th key={`pl-${m}-gm`} className={`text-[10px] text-right py-1 px-2 font-normal ${textMuted} ${isDark ? 'bg-emerald-500/10' : 'bg-emerald-50'} border-b ${borderColor}`}>GM</th>,
+                ])}
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyRows.length === 0 ? (
+                <tr>
+                  <td colSpan={billedMonths.length * 2 + projectedMonths.length * 2 + 5} className="py-12">
+                    <EmptyState icon={Users} title={monthlySearch ? 'No clients match your search' : 'No client data available'} />
+                  </td>
+                </tr>
+              ) : (
+                monthlyRows.map((client: any, idx: number) => {
+                  const rowBg = idx % 2 === 1 ? (isDark ? '#161a2b' : '#fafafa') : (isDark ? '#131726' : '#ffffff');
+                  const fmt = (v: number) => (v ? formatCurrencyShort(v) : '–');
+                  const gmCls = (v: number) => (v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : textMuted);
+                  return (
+                    <tr key={client.client_name} className={`group border-b ${borderColor} ${isDark ? 'hover:bg-blue-500/[0.06]' : 'hover:bg-blue-50/60'} transition-colors`}>
+                      <td
+                        className={`sticky left-0 z-10 text-xs py-2 pl-4 pr-3 whitespace-nowrap ${textColor} border-r ${borderColor}`}
+                        style={{ backgroundColor: rowBg }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Avatar name={client.client_name} size="sm" />
+                          <span className="truncate max-w-[150px]" title={client.client_name}>{client.client_name}</span>
+                        </div>
+                      </td>
+                      {billedMonths.flatMap((m, i) => [
+                        <td key={`b-${m}`} className={`text-xs text-right py-2 px-2 tabular-nums ${textColor} ${i === 0 ? 'border-l-2' : ''} ${i === 0 ? (isDark ? 'border-l-orange-400/30' : 'border-l-orange-300') : ''} ${isDark ? 'bg-orange-500/5' : 'bg-orange-50/40'}`}>
+                          {fmt(client.billed[m])}
+                        </td>,
+                        <td key={`bg-${m}`} className={`text-xs text-right py-2 px-2 tabular-nums font-medium ${gmCls(client.billedGM[m])} ${isDark ? 'bg-orange-500/5' : 'bg-orange-50/40'}`}>
+                          {fmt(client.billedGM[m])}
+                        </td>,
+                      ])}
+                      <td className={`text-xs text-right py-2 px-2 tabular-nums font-semibold border-l ${isDark ? 'bg-orange-500/10' : 'bg-orange-50'} ${textColor}`}>{fmt(client.totalBilled)}</td>
+                      <td className={`text-xs text-right py-2 px-2 tabular-nums font-semibold ${isDark ? 'bg-orange-500/10' : 'bg-orange-50'} ${gmCls(client.totalBilledGM)}`}>{fmt(client.totalBilledGM)}</td>
+                      {projectedMonths.flatMap((m, i) => [
+                        <td key={`p-${m}`} className={`text-xs text-right py-2 px-2 tabular-nums ${textColor} ${i === 0 ? 'border-l-2' : ''} ${i === 0 ? (isDark ? 'border-l-emerald-400/30' : 'border-l-emerald-300') : ''} ${isDark ? 'bg-emerald-500/5' : 'bg-emerald-50/40'}`}>
+                          {fmt(client.projected[m])}
+                        </td>,
+                        <td key={`pg-${m}`} className={`text-xs text-right py-2 px-2 tabular-nums font-medium ${gmCls(client.projectedGM[m])} ${isDark ? 'bg-emerald-500/5' : 'bg-emerald-50/40'}`}>
+                          {fmt(client.projectedGM[m])}
+                        </td>,
+                      ])}
+                      <td className={`text-xs text-right py-2 px-2 tabular-nums font-semibold border-l ${isDark ? 'bg-emerald-500/10' : 'bg-emerald-50'} ${textColor}`}>{fmt(client.totalProjected)}</td>
+                      <td className={`text-xs text-right py-2 px-2 tabular-nums font-semibold ${isDark ? 'bg-emerald-500/10' : 'bg-emerald-50'} ${gmCls(client.totalProjectedGM)}`}>{fmt(client.totalProjectedGM)}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+            {monthlyClientData.length > 0 && (
+              <tfoot>
+                <tr className="sticky bottom-0 z-10 font-semibold">
+                  <td className={`sticky left-0 z-10 text-xs py-2.5 pl-4 pr-3 border-r border-white/10 ${isDark ? 'bg-[#1f2540]' : 'bg-gray-900'} text-white`}>Total (all clients)</td>
+                  {billedMonths.flatMap((m) => [
+                    <td key={`tb-${m}`} className={`text-xs text-right py-2.5 px-2 tabular-nums text-white ${isDark ? 'bg-[#1f2540]' : 'bg-gray-900'}`}>{formatCurrencyShort(monthlyTotals.billed[m])}</td>,
+                    <td key={`tbg-${m}`} className={`text-xs text-right py-2.5 px-2 tabular-nums text-white/80 ${isDark ? 'bg-[#1f2540]' : 'bg-gray-900'}`}>{formatCurrencyShort(monthlyTotals.billedGM[m])}</td>,
+                  ])}
+                  <td className={`text-xs text-right py-2.5 px-2 tabular-nums text-orange-300 border-l border-white/10 ${isDark ? 'bg-[#1f2540]' : 'bg-gray-900'}`}>{formatCurrencyShort(monthlyTotals.totalBilled)}</td>
+                  <td className={`text-xs text-right py-2.5 px-2 tabular-nums text-orange-300 ${isDark ? 'bg-[#1f2540]' : 'bg-gray-900'}`}>{formatCurrencyShort(monthlyTotals.totalBilledGM)}</td>
+                  {projectedMonths.flatMap((m) => [
+                    <td key={`tp-${m}`} className={`text-xs text-right py-2.5 px-2 tabular-nums text-white ${isDark ? 'bg-[#1f2540]' : 'bg-gray-900'}`}>{formatCurrencyShort(monthlyTotals.projected[m])}</td>,
+                    <td key={`tpg-${m}`} className={`text-xs text-right py-2.5 px-2 tabular-nums text-white/80 ${isDark ? 'bg-[#1f2540]' : 'bg-gray-900'}`}>{formatCurrencyShort(monthlyTotals.projectedGM[m])}</td>,
+                  ])}
+                  <td className={`text-xs text-right py-2.5 px-2 tabular-nums text-emerald-300 border-l border-white/10 ${isDark ? 'bg-[#1f2540]' : 'bg-gray-900'}`}>{formatCurrencyShort(monthlyTotals.totalProjected)}</td>
+                  <td className={`text-xs text-right py-2.5 px-2 tabular-nums text-emerald-300 ${isDark ? 'bg-[#1f2540]' : 'bg-gray-900'}`}>{formatCurrencyShort(monthlyTotals.totalProjectedGM)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </Section>
+
+      {/* Footer */}
+      <div className={`text-center py-6 text-[11px] ${textMuted} border-t ${ui.border}`}>
+        Protected by 256-bit encryption · © {currentYear} Evolve Brands Pvt Ltd
+      </div>
+    </div>
+  );
+}
+
+// Card with a title row; `flush` drops the body padding for edge-to-edge tables.
+function Section({
+  title, subtitle, right, children, className = '', flush = false,
+}: { title: string; subtitle?: string; right?: ReactNode; children: ReactNode; className?: string; flush?: boolean }) {
+  const ui = useUi();
+  return (
+    <Card className={`${flush ? 'overflow-hidden' : 'p-4'} animate-in fade-in slide-in-from-bottom-2 fill-mode-both ${className}`}>
+      <div className={`flex flex-wrap items-center justify-between gap-2 ${flush ? 'px-4 pt-4 pb-3' : 'mb-3'}`}>
+        <div>
+          <h2 className={`text-sm font-semibold ${ui.text}`}>{title}</h2>
+          {subtitle && <p className={`text-[11px] ${ui.muted}`}>{subtitle}</p>}
+        </div>
+        {right}
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+function Segmented({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: (readonly [string, string])[] }) {
+  const ui = useUi();
+  return (
+    <div className={`inline-flex p-0.5 rounded-lg ${ui.subtle} border ${ui.border}`}>
+      {options.map(([v, label]) => (
+        <button
+          key={v}
+          onClick={() => onChange(v)}
+          className={`px-3 py-1 text-xs rounded-md transition-all ${
+            value === v ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow' : `${ui.muted} ${ui.isDark ? 'hover:text-white' : 'hover:text-gray-900'}`
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MiniSearch({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const ui = useUi();
+  return (
+    <div className="relative">
+      <Search className={`absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${ui.muted}`} />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={`w-44 pl-8 pr-7 py-1.5 text-xs ${ui.input}`}
+      />
+      {value && (
+        <button onClick={() => onChange('')} className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 ${ui.muted} hover:text-red-400`}>
+          <X className="h-3 w-3" />
+        </button>
+      )}
     </div>
   );
 }

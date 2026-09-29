@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
+from datetime import date
 from backend.db import get_connection, release_connection, get_user_client_ids
 from backend.auth.jwt_handler import require_roles
 from utils.audit import log_audit
@@ -15,6 +16,7 @@ class EditProjectionRequest(BaseModel):
     description: str
     amount: float
     status: str
+    projection_date: Optional[date] = None
     vendors: List[VendorItem] = []
 
 # Edit Projection - Admin (1) and Finance (2).
@@ -25,13 +27,15 @@ async def edit_projection(projection_id: int, data: EditProjectionRequest, user:
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT client_id, invoice_description, client_billed_amount, status FROM billing_entries WHERE id = %s",
+            "SELECT client_id, invoice_description, client_billed_amount, status, projection_date FROM billing_entries WHERE id = %s",
             (projection_id,)
         )
         existing = cursor.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Projection not found")
-        old_client_id, old_description, old_amount, old_status = existing
+        old_client_id, old_description, old_amount, old_status, old_projection_date = existing
+        # Projection date is optional in the request; leave it unchanged when omitted.
+        new_projection_date = data.projection_date or old_projection_date
 
         # Only let the user edit projections for clients they're assigned to
         if user["role_id"] != 1:
@@ -44,13 +48,15 @@ async def edit_projection(projection_id: int, data: EditProjectionRequest, user:
             SET
                 invoice_description = %s,
                 client_billed_amount = %s,
-                status = %s
+                status = %s,
+                projection_date = %s
             WHERE id = %s
             RETURNING id
         """, (
             data.description,
             data.amount,
             data.status,
+            new_projection_date,
             projection_id
         ))
 
@@ -66,6 +72,10 @@ async def edit_projection(projection_id: int, data: EditProjectionRequest, user:
             log_audit(cursor, "billing_entries", projection_id, "client_billed_amount",
                        old_amount, data.amount, "UPDATE",
                        user["user_id"], user["role_id"], "projection", "HIGH")
+        if new_projection_date != old_projection_date:
+            log_audit(cursor, "billing_entries", projection_id, "projection_date",
+                       old_projection_date, new_projection_date, "UPDATE",
+                       user["user_id"], user["role_id"], "projection", "LOW")
         if data.status != old_status:
             log_audit(cursor, "billing_entries", projection_id, "status",
                        old_status, data.status, "UPDATE",

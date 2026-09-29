@@ -3,42 +3,39 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { useTheme } from '@/lib/providers/ThemeProvider';
-import { Search, X, RefreshCw, ChevronLeft, ChevronRight, FileText, DollarSign, Building2, Calendar } from 'lucide-react';
+import { FileText, IndianRupee, Building2, TrendingUp, Undo2, Receipt } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { API_URL } from '@/lib/api';
+import { formatDate, formatINR } from '@/lib/format';
+import {
+  useUi, PageHeader, RefreshButton, StatGrid, FilterBar, SearchInput, FilterSelect, ClearFiltersButton,
+  TableShell, THead, Th, Tr, TdAccent, EmptyRow, Pagination, EntityCell, Chip, Badge, Modal, Alert,
+  GradientButton, GhostButton, Spinner, PageSkeleton,
+} from '@/components/app/ui';
+
+type SortKey = 'id' | 'amount' | 'invoice_date' | 'client_name';
 
 export default function BilledPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
+  const ui = useUi();
 
   const [bills, setBills] = useState<any[]>([]);
   const [filteredBills, setFilteredBills] = useState<any[]>([]);
   const [isFetching, setIsFetching] = useState(true);
-  const [error, setError] = useState('');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterClient, setFilterClient] = useState('');
   const [clients, setClients] = useState<string[]>([]);
+  const [sortKey, setSortKey] = useState<SortKey>('id');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const [currentPage, setCurrentPage] = useState(1);
+  const isAdmin = user?.role_id === 1;
+  const [unbillTarget, setUnbillTarget] = useState<any | null>(null);
+  const [unbilling, setUnbilling] = useState(false);
+  const [unbillError, setUnbillError] = useState('');
   const [itemsPerPage] = useState(10);
-
-  const bgCard = isDark ? 'bg-[#131726]' : 'bg-white';
-  const borderLight = isDark ? 'border-white/5' : 'border-gray-200';
-  const textMain = isDark ? 'text-white' : 'text-gray-900';
-  const textMuted = isDark ? 'text-white/50' : 'text-gray-500';
-  const inputBg = isDark ? 'bg-white/5' : 'bg-gray-50';
-  const inputBorder = isDark ? 'border-white/10' : 'border-gray-300';
-  const inputText = isDark ? 'text-white' : 'text-gray-800';
-  const placeholder = isDark ? 'placeholder-white/20' : 'placeholder-gray-400';
-  const tableText = isDark ? 'text-white' : 'text-gray-800';
-  const tableTextMuted = isDark ? 'text-white/60' : 'text-gray-600';
-  const tableHeader = isDark ? 'text-white/40' : 'text-gray-500';
-  const hoverBg = isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50';
-  const cardBorder = isDark ? 'border-white/5' : 'border-gray-200';
-  const rowBorder = isDark ? 'border-white/5' : 'border-gray-100';
 
   useEffect(() => {
     if (!loading && !user) {
@@ -54,25 +51,25 @@ export default function BilledPage() {
 
   useEffect(() => {
     applyFilters();
-  }, [bills, searchTerm, filterClient]);
+  }, [bills, searchTerm, filterClient, sortKey, sortDir]);
 
   const fetchData = async () => {
     setIsFetching(true);
     try {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
-      
+
       const res = await fetch(`${API_URL}/api/billed`, { headers });
       const data = await res.json();
-      
+
       const billsData = Array.isArray(data) ? data : [];
       setBills(billsData);
-      
-      const uniqueClients = [...new Set(billsData.map((b: any) => b.client_name).filter(Boolean))];
-      setClients(uniqueClients);
+
+      const uniqueClients = [...new Set<string>(billsData.map((b: any) => b.client_name).filter(Boolean))];
+      setClients(uniqueClients.sort());
     } catch (error) {
       console.error('Error fetching data:', error);
-      setError('Failed to load data');
+      toast.error('Failed to load billed invoices');
     } finally {
       setIsFetching(false);
     }
@@ -80,22 +77,39 @@ export default function BilledPage() {
 
   const applyFilters = () => {
     let filtered = [...bills];
-    
+
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(b => 
+      filtered = filtered.filter(b =>
         b.client_name?.toLowerCase().includes(term) ||
+        b.program_name?.toLowerCase().includes(term) ||
         b.invoice_no?.toLowerCase().includes(term) ||
-        b.id?.toString().includes(term)
+        b.id?.toString().includes(term.replace(/^#/, ''))
       );
     }
-    
+
     if (filterClient) {
       filtered = filtered.filter(b => b.client_name === filterClient);
     }
-    
+
+    filtered.sort((a, b) => {
+      const av = a[sortKey] ?? '';
+      const bv = b[sortKey] ?? '';
+      const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
     setFilteredBills(filtered);
     setCurrentPage(1);
+  };
+
+  const toggleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key as SortKey);
+      setSortDir(key === 'client_name' ? 'asc' : 'desc');
+    }
   };
 
   const clearFilters = () => {
@@ -108,224 +122,162 @@ export default function BilledPage() {
   const endIndex = startIndex + itemsPerPage;
   const currentBills = filteredBills.slice(startIndex, endIndex);
 
-  const getPageNumbers = () => {
-    const total = totalPages;
-    const current = currentPage;
-    const delta = 2;
-    const range = [];
-    const rangeWithDots = [];
-    let l;
+  const closeUnbill = () => {
+    if (unbilling) return;
+    setUnbillTarget(null);
+    setUnbillError('');
+  };
 
-    for (let i = 1; i <= total; i++) {
-      if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
-        range.push(i);
+  const confirmUnbill = async () => {
+    if (!unbillTarget) return;
+    setUnbilling(true);
+    setUnbillError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/billed/${unbillTarget.id}/unbill`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to move back to projected');
       }
+      const remaining = bills.filter(b => b.id !== unbillTarget.id);
+      setBills(remaining);
+      setClients([...new Set<string>(remaining.map((b: any) => b.client_name).filter(Boolean))].sort());
+      toast.success(`Invoice ${unbillTarget.invoice_no} moved back to projected`);
+      setUnbillTarget(null);
+    } catch (err: any) {
+      setUnbillError(err.message || 'Failed to move back to projected');
+    } finally {
+      setUnbilling(false);
     }
-
-    range.forEach((i) => {
-      if (l) {
-        if (i - l === 2) {
-          rangeWithDots.push(l + 1);
-        } else if (i - l !== 1) {
-          rangeWithDots.push('...');
-        }
-      }
-      rangeWithDots.push(i);
-      l = i;
-    });
-
-    return rangeWithDots;
   };
 
-  const goToPage = (page: number) => {
-    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
-  };
-
-  if (isFetching) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
-      </div>
-    );
+  if (isFetching && bills.length === 0) {
+    return <PageSkeleton />;
   }
 
   const totalAmount = filteredBills.reduce((sum, b) => sum + (b.amount || 0), 0);
+  const visibleClients = new Set(filteredBills.map(b => b.client_name)).size;
+  const sortProps = { activeSortKey: sortKey, sortDir, onSort: toggleSort };
+  const colCount = isAdmin ? 7 : 6;
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className={`text-2xl font-semibold ${textMain}`}>Billed Invoices</h1>
-            <p className={`text-sm ${textMuted}`}>View all billed invoices</p>
-          </div>
-          <div className={`flex items-center gap-2 px-3 py-1.5 ${isDark ? 'bg-white/5' : 'bg-gray-100'} rounded-lg`}>
-            <FileText className="h-4 w-4 text-blue-400" />
-            <span className={`text-xs ${textMuted}`}>{filteredBills.length} invoices</span>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        icon={Receipt}
+        title="Billed Invoices"
+        subtitle="Every invoice that has been billed"
+        gradient="from-emerald-500 to-teal-500"
+        actions={<RefreshButton onClick={fetchData} loading={isFetching} />}
+      />
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
-        <div className={`p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${borderLight}`}>
-          <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-blue-400" />
-            <span className={`text-xs ${textMuted}`}>Total</span>
-          </div>
-          <p className={`text-base font-semibold ${textMain}`}>{filteredBills.length}</p>
-        </div>
-        <div className={`p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${borderLight}`}>
-          <div className="flex items-center gap-2">
-            <DollarSign className="h-4 w-4 text-purple-400" />
-            <span className={`text-xs ${textMuted}`}>Total Amount</span>
-          </div>
-          <p className={`text-base font-semibold ${textMain}`}>₹{totalAmount.toLocaleString()}</p>
-        </div>
-        <div className={`p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${borderLight}`}>
-          <div className="flex items-center gap-2">
-            <Building2 className="h-4 w-4 text-green-400" />
-            <span className={`text-xs ${textMuted}`}>Clients</span>
-          </div>
-          <p className={`text-base font-semibold ${textMain}`}>{clients.length}</p>
-        </div>
-        <div className={`p-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'} rounded-lg border ${borderLight}`}>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-yellow-400" />
-            <span className={`text-xs ${textMuted}`}>Avg Amount</span>
-          </div>
-          <p className={`text-base font-semibold ${textMain}`}>
-            ₹{(filteredBills.length > 0 ? (totalAmount / filteredBills.length) : 0).toFixed(0)}
-          </p>
-        </div>
-      </div>
+      <StatGrid
+        stats={[
+          { label: 'Invoices', value: filteredBills.length, icon: FileText, color: 'blue' },
+          { label: 'Total Billed', value: totalAmount, icon: IndianRupee, color: 'emerald', money: true },
+          { label: 'Clients', value: visibleClients, icon: Building2, color: 'purple' },
+          { label: 'Avg Invoice', value: filteredBills.length ? totalAmount / filteredBills.length : 0, icon: TrendingUp, color: 'amber', money: true },
+        ]}
+      />
 
-      {/* Search & Filters */}
-      <div className={`${bgCard} ${cardBorder} border rounded-lg p-3 mb-6`}>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex-1 min-w-[180px] relative">
-            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 ${textMuted}`} />
-            <input
-              type="text"
-              placeholder="Search by ID, client, invoice..."
-              className={`w-full pl-9 pr-3 py-1.5 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText} ${placeholder}`}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+      <FilterBar>
+        <SearchInput value={searchTerm} onChange={setSearchTerm} placeholder="Search by ID, client, program or invoice #…" />
+        <FilterSelect value={filterClient} onChange={setFilterClient}>
+          <option value="">All Clients</option>
+          {clients.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </FilterSelect>
+        <ClearFiltersButton show={Boolean(searchTerm || filterClient)} onClick={clearFilters} />
+      </FilterBar>
+
+      <TableShell
+        footer={
+          <Pagination
+            currentPage={currentPage} totalPages={totalPages} startIndex={startIndex} endIndex={endIndex}
+            total={filteredBills.length} onPage={setCurrentPage}
+          />
+        }
+      >
+        <THead>
+          <Th sortKey="id" {...sortProps}>ID</Th>
+          <Th>Invoice #</Th>
+          <Th sortKey="client_name" {...sortProps}>Client / Program</Th>
+          <Th>Month</Th>
+          <Th sortKey="invoice_date" {...sortProps}>Invoice Date</Th>
+          <Th sortKey="amount" align="right" {...sortProps}>Amount</Th>
+          {isAdmin && <Th align="right">Actions</Th>}
+        </THead>
+        <tbody>
+          {currentBills.length === 0 ? (
+            <EmptyRow
+              colSpan={colCount}
+              title="No billed invoices found"
+              action={(searchTerm || filterClient) ? <button onClick={clearFilters} className="text-xs text-blue-400 hover:underline">Clear filters</button> : undefined}
             />
-          </div>
-
-          <select
-            className={`px-3 py-1.5 text-sm ${inputBg} ${inputBorder} border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${inputText}`}
-            style={{ colorScheme: isDark ? 'dark' : 'light' }}
-            value={filterClient}
-            onChange={(e) => setFilterClient(e.target.value)}
-          >
-            <option value="">All Clients</option>
-            {clients.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-
-          {(searchTerm || filterClient) && (
-            <button onClick={clearFilters} className={`p-1.5 ${textMuted} hover:text-white/80 transition`}>
-              <X className="h-4 w-4" />
-            </button>
-          )}
-
-          <button
-            onClick={fetchData}
-            className={`p-1.5 ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'} rounded-lg transition ${textMuted}`}
-          >
-            <RefreshCw className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className={`${bgCard} ${cardBorder} border rounded-lg overflow-hidden`}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className={`border-b ${borderLight}`}>
-                <th className={`px-3 py-2 text-left text-xs font-medium ${tableHeader}`}>ID</th>
-                <th className={`px-3 py-2 text-left text-xs font-medium ${tableHeader}`}>Invoice #</th>
-                <th className={`px-3 py-2 text-left text-xs font-medium ${tableHeader}`}>Client</th>
-                <th className={`px-3 py-2 text-left text-xs font-medium ${tableHeader}`}>Amount</th>
-                <th className={`px-3 py-2 text-left text-xs font-medium ${tableHeader}`}>Month</th>
-                <th className={`px-3 py-2 text-left text-xs font-medium ${tableHeader}`}>Date</th>
-                <th className={`px-3 py-2 text-left text-xs font-medium ${tableHeader}`}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {currentBills.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className={`px-4 py-6 text-center ${textMuted} text-sm`}>
-                    No billed invoices found
+          ) : (
+            currentBills.map((b, i) => (
+              <Tr key={b.id} index={i}>
+                <TdAccent className={`text-xs font-mono ${ui.textSoft}`}>#{b.id}</TdAccent>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-medium ${ui.text}`}>{b.invoice_no || '-'}</span>
+                    <Badge tone="green" dot>Billed</Badge>
+                  </div>
+                </td>
+                <td className="px-4 py-3"><EntityCell name={b.client_name} sub={b.program_name} /></td>
+                <td className="px-4 py-3">{b.invoice_month ? <Chip>{b.invoice_month}</Chip> : <span className={ui.textSoft}>-</span>}</td>
+                <td className={`px-4 py-3 text-xs ${ui.textSoft} whitespace-nowrap`}>{formatDate(b.invoice_date)}</td>
+                <td className={`px-4 py-3 text-right text-sm font-semibold ${ui.text} whitespace-nowrap tabular-nums`}>{formatINR(b.amount)}</td>
+                {isAdmin && (
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => setUnbillTarget(b)}
+                      title="Move back to projected"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-md text-amber-400 bg-amber-500/10 opacity-60 group-hover:opacity-100 hover:bg-amber-500/20 transition"
+                    >
+                      <Undo2 className="h-3.5 w-3.5" />
+                      Unbill
+                    </button>
                   </td>
-                </tr>
-              ) : (
-                currentBills.map((b) => (
-                  <tr key={b.id} className={`${hoverBg} transition-colors`}>
-                    <td className={`px-3 py-2 text-xs ${tableTextMuted}`}>#{b.id}</td>
-                    <td className={`px-3 py-2 text-xs ${tableText}`}>{b.invoice_no || '-'}</td>
-                    <td className={`px-3 py-2 text-xs ${tableText}`}>{b.client_name}</td>
-                    <td className={`px-3 py-2 text-xs font-medium ${tableText}`}>₹{b.amount?.toLocaleString()}</td>
-                    <td className={`px-3 py-2 text-xs ${tableTextMuted}`}>{b.invoice_month}</td>
-                    <td className={`px-3 py-2 text-xs ${tableTextMuted}`}>{b.invoice_date || '-'}</td>
-                    <td className="px-3 py-2">
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400">
-                        Billed
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </Tr>
+            ))
+          )}
+        </tbody>
+      </TableShell>
 
-        {totalPages > 1 && (
-          <div className={`px-3 py-2 border-t ${borderLight} flex items-center justify-between`}>
-            <span className={`text-xs ${textMuted}`}>
-              {startIndex + 1}-{Math.min(endIndex, filteredBills.length)} of {filteredBills.length}
-            </span>
-            <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => goToPage(1)}
-                disabled={currentPage === 1}
-                className={`p-1 rounded ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'} disabled:opacity-30 transition`}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              {getPageNumbers().map((page, index) => (
-                typeof page === 'number' ? (
-                  <button
-                    key={index}
-                    onClick={() => goToPage(page)}
-                    className={`px-2.5 py-0.5 text-xs rounded transition ${
-                      currentPage === page
-                        ? 'bg-blue-500 text-white'
-                        : `${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'} ${textMuted}`
-                    }`}
-                  >
-                    {page}
-                  </button>
-                ) : (
-                  <span key={index} className={`px-1 text-xs ${textMuted}`}>…</span>
-                )
-              ))}
-              <button
-                onClick={() => goToPage(totalPages)}
-                disabled={currentPage === totalPages}
-                className={`p-1 rounded ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'} disabled:opacity-30 transition`}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
+      {/* Unbill confirmation (Admin only) */}
+      <Modal
+        open={Boolean(unbillTarget)}
+        onClose={closeUnbill}
+        title="Move back to projected?"
+        footer={
+          <>
+            <GhostButton onClick={closeUnbill} disabled={unbilling}>Cancel</GhostButton>
+            <GradientButton variant="warning" onClick={confirmUnbill} disabled={unbilling}>
+              {unbilling ? <Spinner /> : <Undo2 className="h-4 w-4" />}
+              Move to projected
+            </GradientButton>
+          </>
+        }
+      >
+        {unbillTarget && (
+          <>
+            {unbillError && <Alert tone="error">{unbillError}</Alert>}
+            <div className={`flex items-center justify-between gap-3 p-3 rounded-lg ${ui.subtle} border ${ui.border}`}>
+              <EntityCell name={unbillTarget.client_name} sub={`Invoice ${unbillTarget.invoice_no}`} />
+              <span className={`text-sm font-semibold ${ui.text} tabular-nums`}>{formatINR(unbillTarget.amount)}</span>
             </div>
-          </div>
+            <p className={`text-xs ${ui.muted}`}>
+              The invoice number, invoice date and funnel number are cleared so it can be converted again.
+              The amount and vendor costs stay as they are. This is recorded in the audit log.
+            </p>
+          </>
         )}
-      </div>
+      </Modal>
     </div>
   );
 }

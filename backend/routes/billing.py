@@ -55,7 +55,7 @@ class ConvertBillingRequest(BaseModel):
     delete_reason: Optional[str] = None
     funnel_number: Optional[str] = None
     invoice_no: Optional[str] = None
-    invoice_date: str
+    invoice_date: Optional[str] = None
     vendors: List[dict] = []
 
 # Convert to Billing - Admin (1) and Finance (2).
@@ -85,6 +85,30 @@ async def convert_to_billing(projection_id: int, data: ConvertBillingRequest, us
             allowed_client_ids = get_user_client_ids(cursor, user["user_id"])
             if result[2] not in allowed_client_ids:
                 raise HTTPException(status_code=403, detail="You do not have access to this client")
+
+        # Status "Deleted" drops the projection instead of billing it: no
+        # invoice/funnel number needed, just a reason.
+        if data.status == "Deleted":
+            reason = (data.delete_reason or "").strip()
+            if not reason:
+                raise HTTPException(status_code=400, detail="A reason is required to delete a projection")
+            cursor.execute(
+                "UPDATE billing_entries SET status = 'Deleted', reason = %s WHERE id = %s",
+                (reason, projection_id),
+            )
+            log_audit(cursor, "billing_entries", projection_id, "status",
+                       "Active", "Deleted", "DELETE",
+                       user["user_id"], user["role_id"], "billing", "HIGH")
+            log_audit(cursor, "billing_entries", projection_id, "reason",
+                       None, reason, "UPDATE",
+                       user["user_id"], user["role_id"], "billing", "MEDIUM")
+            conn.commit()
+            return {"id": projection_id, "message": "Projection deleted"}
+
+        if not (data.invoice_no or "").strip() or not (data.funnel_number or "").strip():
+            raise HTTPException(status_code=400, detail="Invoice number and funnel number are required to bill")
+        if not data.invoice_date:
+            raise HTTPException(status_code=400, detail="Invoice date is required to bill")
 
         # Update the projection to Billed status
         try:

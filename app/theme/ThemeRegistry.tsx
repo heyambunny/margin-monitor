@@ -54,14 +54,19 @@ const theme = createTheme({
           fontWeight: 600,
           borderRadius: '10px',
           padding: '10px 24px',
-        },
-        containedPrimary: {
-          background: 'linear-gradient(135deg, #6C3BFF 0%, #8B5CF6 100%)',
-          boxShadow: '0 4px 14px rgba(108, 59, 255, 0.35)',
-          '&:hover': {
-            boxShadow: '0 6px 20px rgba(108, 59, 255, 0.45)',
-            transform: 'translateY(-1px)',
-          },
+          variants: [
+            {
+              props: { variant: 'contained', color: 'primary' },
+              style: {
+                background: 'linear-gradient(135deg, #6C3BFF 0%, #8B5CF6 100%)',
+                boxShadow: '0 4px 14px rgba(108, 59, 255, 0.35)',
+                '&:hover': {
+                  boxShadow: '0 6px 20px rgba(108, 59, 255, 0.45)',
+                  transform: 'translateY(-1px)',
+                },
+              },
+            },
+          ],
         },
       },
     },
