@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
 import { Search, X, Users, UserPlus, Building2, Plus, ShieldCheck, UserCog } from 'lucide-react';
@@ -33,6 +33,7 @@ export default function ClientsPage() {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const detailRef = useRef<HTMLDivElement>(null);
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'Supervisor' });
 
   useEffect(() => {
@@ -100,6 +101,10 @@ export default function ClientsPage() {
   const handleUserSelect = (selected: any) => {
     setSelectedUser(selected);
     fetchUserClients(selected.id);
+    // On phones the access panel sits below the user list - bring it into view.
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      setTimeout(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    }
   };
 
   const handleAssignClient = async (clientId: number) => {
@@ -301,7 +306,8 @@ export default function ClientsPage() {
         </Card>
 
         {/* Client access for selected user */}
-        <Card className="md:col-span-2 p-4">
+        <div ref={detailRef} className="md:col-span-2 scroll-mt-20">
+        <Card className="p-4">
           {selectedUser ? (
             <div key={selectedUser.id} className="animate-in fade-in duration-300">
               <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
@@ -410,6 +416,7 @@ export default function ClientsPage() {
             </div>
           )}
         </Card>
+        </div>
       </div>
 
       {/* Create user */}

@@ -10,7 +10,8 @@ import { API_URL } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import {
   useUi, PageHeader, RefreshButton, StatGrid, FilterBar, SearchInput, FilterSelect, ClearFiltersButton,
-  TableShell, THead, Th, Tr, EmptyRow, Pagination, Avatar, Badge, Chip, Alert, PageSkeleton, type BadgeTone,
+  TableShell, THead, Th, Tr, EmptyRow, Pagination, Avatar, Badge, Chip, Alert, PageSkeleton, EmptyState,
+  MobileList, MobileCard, type BadgeTone,
 } from '@/components/app/ui';
 
 const ACTION_TONE: Record<string, BadgeTone> = { INSERT: 'green', UPDATE: 'blue', DELETE: 'red' };
@@ -208,6 +209,47 @@ export default function AuditLogsPage() {
             currentPage={currentPage} totalPages={totalPages} startIndex={startIndex} endIndex={endIndex}
             total={totalItems} onPage={setCurrentPage}
           />
+        }
+        mobile={
+          <MobileList empty={<EmptyState title={term ? 'No logs on this page match your search' : 'No audit logs found'} />}>
+            {visibleLogs.map((log, index) => {
+              const expandable = log.changes && log.changes.length > 0;
+              const isOpen = expandedRow === index;
+              return (
+                <MobileCard key={`${log.record_id}-${log.changed_at}-${index}`} index={index} onClick={expandable ? () => setExpandedRow(isOpen ? null : index) : undefined}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Avatar name={log.username} size="sm" />
+                      <span className={`text-sm ${ui.text} truncate`}>{log.username || 'Unknown'}</span>
+                    </div>
+                    <span className={`text-[11px] ${ui.muted} whitespace-nowrap`}>{timeAgo(log.changed_at)}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 pl-8 text-xs">
+                    <Badge tone={ACTION_TONE[log.action_type] || 'gray'}>{log.action_type}</Badge>
+                    <Badge tone={IMPACT_TONE[log.impact_level] || 'gray'}>{log.impact_level}</Badge>
+                    <span className={ui.textSoft}><span className="font-mono">{log.table_name}</span> #{log.record_id}</span>
+                    {expandable && (
+                      <span className={`ml-auto inline-flex items-center gap-0.5 ${ui.muted}`}>
+                        {log.changes.length}
+                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                      </span>
+                    )}
+                  </div>
+                  {isOpen && (
+                    <div className="pl-8 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                      {log.changes.map((change: any, idx: number) => (
+                        <div key={idx} className={`p-2 rounded-lg border ${ui.border} text-xs space-y-1`}>
+                          <p className={`font-mono font-medium ${ui.text}`}>{change.column}</p>
+                          <p className="text-red-400 line-through decoration-red-400/40 break-all">{change.old ?? 'NULL'}</p>
+                          <p className="text-emerald-400 break-all">{change.new ?? 'NULL'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </MobileCard>
+              );
+            })}
+          </MobileList>
         }
       >
         <THead>

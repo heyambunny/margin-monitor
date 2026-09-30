@@ -10,6 +10,7 @@ import { formatDate, formatINR } from '@/lib/format';
 import {
   useUi, PageHeader, RefreshButton, StatGrid, FilterBar, SearchInput, FilterSelect, ClearFiltersButton,
   TableShell, THead, Th, Tr, TdAccent, EmptyRow, Pagination, EntityCell, Chip, Badge, Modal, Alert,
+  MobileList, MobileCard, EmptyState,
   GradientButton, GhostButton, Spinner, PageSkeleton,
 } from '@/components/app/ui';
 
@@ -200,6 +201,31 @@ export default function BilledPage() {
             total={filteredBills.length} onPage={setCurrentPage}
           />
         }
+        mobile={
+          <MobileList empty={<EmptyState title="No billed invoices found" />}>
+            {currentBills.map((b, i) => (
+              <MobileCard key={b.id} index={i}>
+                <div className="flex items-start justify-between gap-3">
+                  <EntityCell name={b.client_name} sub={b.program_name} />
+                  <span className={`text-sm font-semibold ${ui.text} tabular-nums whitespace-nowrap`}>{formatINR(b.amount)}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pl-11 text-xs">
+                  <span className={`font-medium ${ui.text}`}>{b.invoice_no || '-'}</span>
+                  {b.invoice_month && <Chip>{b.invoice_month}</Chip>}
+                  <span className={ui.muted}>{formatDate(b.invoice_date)}</span>
+                  {isAdmin && (
+                    <button
+                      onClick={() => setUnbillTarget(b)}
+                      className="ml-auto inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-amber-400 bg-amber-500/10 active:bg-amber-500/20"
+                    >
+                      <Undo2 className="h-3.5 w-3.5" /> Unbill
+                    </button>
+                  )}
+                </div>
+              </MobileCard>
+            ))}
+          </MobileList>
+        }
       >
         <THead>
           <Th sortKey="id" {...sortProps}>ID</Th>
@@ -236,7 +262,7 @@ export default function BilledPage() {
                     <button
                       onClick={() => setUnbillTarget(b)}
                       title="Move back to projected"
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-md text-amber-400 bg-amber-500/10 opacity-60 group-hover:opacity-100 hover:bg-amber-500/20 transition"
+                      className="touch-show inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-md text-amber-400 bg-amber-500/10 opacity-60 group-hover:opacity-100 hover:bg-amber-500/20 transition"
                     >
                       <Undo2 className="h-3.5 w-3.5" />
                       Unbill

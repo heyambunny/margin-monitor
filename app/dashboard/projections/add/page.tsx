@@ -432,6 +432,24 @@ export default function AddProjectionPage() {
             </div>
           </Card>
         </div>
+
+        {/* Phones: keep Save within reach while scrolling the form */}
+        <div
+          className={`lg:hidden fixed inset-x-0 bottom-0 z-30 px-3 pt-3 border-t backdrop-blur-md ${ui.isDark ? 'bg-[#0b0e1a]/90 border-white/10' : 'bg-white/90 border-gray-200'}`}
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className={`text-[11px] ${ui.muted}`}>{doneCount}/{checklist.length} required · margin {amount > 0 ? `${marginPct.toFixed(1)}%` : '-'}</p>
+              <p className={`text-base font-bold ${ui.text} tabular-nums truncate`}>{formatINR(amount)}</p>
+            </div>
+            <GradientButton type="submit" disabled={submitting || doneCount < checklist.length}>
+              {submitting ? <Spinner /> : <Save className="h-4 w-4" />}
+              {submitting ? 'Saving…' : 'Save'}
+            </GradientButton>
+          </div>
+        </div>
+        <div className="lg:hidden h-20" aria-hidden />
       </form>
     </div>
   );

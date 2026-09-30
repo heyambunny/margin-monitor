@@ -3,7 +3,9 @@ from pydantic import BaseModel
 from fastapi.security import OAuth2PasswordBearer
 
 from backend.db import get_connection, release_connection
-from backend.auth.jwt_handler import create_access_token, get_current_user
+from backend.auth.jwt_handler import create_access_token, get_current_user, APP_TOKEN_EXPIRE_DAYS, SECRET_KEY, ALGORITHM
+from datetime import timedelta
+from jose import jwt, JWTError
 
 import bcrypt
 import traceback
@@ -14,6 +16,16 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 class LoginRequest(BaseModel):
     email: str
     password: str
+    # True when signing in from the installed app (PWA): long-lived token.
+    app: bool = False
+
+
+def issue_token(user_id: int, name: str, role_id: int, app: bool) -> str:
+    claims = {"user_id": user_id, "name": name, "role_id": role_id}
+    if app:
+        claims["app"] = True
+        return create_access_token(claims, timedelta(days=APP_TOKEN_EXPIRE_DAYS))
+    return create_access_token(claims)
 
 @router.post("/login")
 def login(data: LoginRequest):
@@ -76,11 +88,7 @@ def login(data: LoginRequest):
 
         # Create token
         print("🔄 Creating access token...")
-        token = create_access_token({
-            "user_id": user_id,
-            "name": name,
-            "role_id": role_id
-        })
+        token = issue_token(user_id, name, role_id, data.app)
         print("✅ Token created successfully")
 
         return {
@@ -104,6 +112,34 @@ def login(data: LoginRequest):
             print("🔄 Releasing database connection...")
             release_connection(conn)
             print("✅ Database connection released")
+
+# Swap a still-valid token for a fresh one of the same kind (web or app).
+# Re-reads the user so deactivated users or role changes take effect.
+@router.post("/refresh")
+def refresh(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.get("user_id")
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, role_id FROM users WHERE id = %s AND is_active = TRUE", (user_id,))
+        row = cursor.fetchone()
+    finally:
+        release_connection(conn)
+    if not row:
+        raise HTTPException(status_code=401, detail="Account is no longer active")
+
+    uid, name, role_id = row
+    return {
+        "access_token": issue_token(uid, name, role_id, bool(payload.get("app"))),
+        "user": {"id": uid, "name": name, "role_id": role_id},
+    }
 
 @router.get("/me")
 def get_me(token: str = Depends(oauth2_scheme)):

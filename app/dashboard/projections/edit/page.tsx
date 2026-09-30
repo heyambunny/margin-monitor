@@ -12,6 +12,7 @@ import { formatDate, formatINR } from '@/lib/format';
 import {
   useUi, PageHeader, RefreshButton, StatGrid, FilterBar, SearchInput, FilterSelect, ClearFiltersButton,
   TableShell, THead, Th, Tr, TdAccent, EmptyRow, Pagination, EntityCell, Chip, SidePanel, Alert, Field,
+  MobileList, MobileCard, EmptyState,
   GradientButton, GhostButton, Spinner, PageSkeleton,
 } from '@/components/app/ui';
 
@@ -303,6 +304,24 @@ export default function EditProjectionPage() {
             total={filteredProjections.length} onPage={setCurrentPage}
           />
         }
+        mobile={
+          <MobileList empty={<EmptyState title="No active projections found" />}>
+            {currentProjections.map((p, i) => (
+              <MobileCard key={p.id} index={i} onClick={() => startEdit(p)} highlight={recentlyUpdatedId === p.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <EntityCell name={p.client_name} sub={p.program_name} />
+                  <span className={`text-sm font-semibold ${ui.text} tabular-nums whitespace-nowrap`}>{formatINR(p.amount)}</span>
+                </div>
+                <div className="flex items-center gap-2 pl-11 text-xs">
+                  <span className={`font-mono ${ui.muted}`}>#{p.id}</span>
+                  {p.invoice_month && <Chip>{p.invoice_month}</Chip>}
+                  <span className={ui.muted}>{formatDate(p.projection_date)}</span>
+                  <Pencil className="ml-auto h-3.5 w-3.5 text-blue-400" />
+                </div>
+              </MobileCard>
+            ))}
+          </MobileList>
+        }
       >
         <THead>
           <Th sortKey="id" {...sortProps}>ID</Th>
@@ -328,7 +347,7 @@ export default function EditProjectionPage() {
                 <td className={`px-4 py-3 text-xs ${ui.textSoft} whitespace-nowrap`}>{formatDate(p.projection_date)}</td>
                 <td className={`px-4 py-3 text-right text-sm font-semibold ${ui.text} whitespace-nowrap tabular-nums`}>{formatINR(p.amount)}</td>
                 <td className="px-4 py-3 text-right">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-blue-400 bg-blue-500/10 rounded-md opacity-60 group-hover:opacity-100 group-hover:bg-blue-500/20 transition">
+                  <span className="touch-show inline-flex items-center gap-1 px-2.5 py-1 text-xs text-blue-400 bg-blue-500/10 rounded-md opacity-60 group-hover:opacity-100 group-hover:bg-blue-500/20 transition">
                     <Pencil className="h-3 w-3" />
                     Edit
                   </span>
@@ -355,7 +374,7 @@ export default function EditProjectionPage() {
                   Unsaved changes
                 </span>
               ) : (
-                <>Esc to close · ⌘/Ctrl S to save</>
+                <span className="hidden sm:inline">Esc to close · ⌘/Ctrl S to save</span>
               )}
             </span>
             <div className="flex items-center gap-2">

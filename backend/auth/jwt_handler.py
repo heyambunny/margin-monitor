@@ -16,6 +16,9 @@ if not SECRET_KEY:
     )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+# The installed app (PWA) stays signed in like a mobile app; its tokens are
+# renewed via /api/refresh each time it's opened.
+APP_TOKEN_EXPIRE_DAYS = 30
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 

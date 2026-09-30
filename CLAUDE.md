@@ -36,6 +36,21 @@ curl -s -o /dev/null -w "%{http_code}\n" https://app.marginmonitor.in/login
 There is no migration tool: schema changes need a one-off script run by hand
 on the prod DB before restarting the backend.
 
+## Mobile & installed app (PWA)
+
+- Below 1024px the sidebar is a slide-in drawer with a top bar; list pages
+  pass a `mobile` card view to `TableShell` (components/app/ui.tsx).
+- `app/manifest.ts` + `public/sw.js` make the app installable. The service
+  worker must NEVER cache `/api/*` responses or page HTML (confidential data) -
+  only `/_next/static`, icons and `offline.html`. Bump `VERSION` in sw.js when
+  changing it. It only registers in production builds; the in-app preview
+  browser blocks service workers, so test with real/headless Chrome.
+- Sessions: web keeps the 15-min idle logout and renews its 30-min token
+  while active (`/api/refresh`). The installed app (display-mode standalone)
+  logs in with `app: true` for a 30-day token, has no idle logout and renews
+  on open. Only a 401 signs the user out - network errors must not.
+- Icons are generated from the Gem logo (public/icons, app/apple-icon.png).
+
 ## Data notes
 
 - "Billed" is recorded two ways: `status = 'Billed'` (Convert to Billing) and

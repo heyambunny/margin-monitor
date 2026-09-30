@@ -8,7 +8,7 @@ import { API_URL } from '@/lib/api';
 import {
   useUi, PageHeader, RefreshButton, StatGrid, FilterBar, FilterSelect, ClearFiltersButton, Card,
   TableShell, THead, Th, Tr, TdAccent, EmptyRow, EmptyState, Pagination, EntityCell, Chip, Badge, Avatar,
-  PageSkeleton, type BadgeTone,
+  PageSkeleton, MobileList, MobileCard, type BadgeTone,
 } from '@/components/app/ui';
 
 const MONTH_ABBR: Record<string, number> = {
@@ -307,8 +307,8 @@ export default function FinancePage() {
                           />
                           <div className="relative"><Avatar name={c.client_name} size="sm" /></div>
                           <span className={`relative flex-1 min-w-0 text-sm ${ui.text} truncate`} title={c.client_name}>{c.client_name}</span>
-                          <span className={`relative text-[11px] ${ui.muted} whitespace-nowrap`}>{c.bills} {c.bills === 1 ? 'bill' : 'bills'}</span>
-                          <span className={`relative text-sm font-semibold ${ui.text} tabular-nums w-24 text-right`}>{formatCurrency(c.amount)}</span>
+                          <span className={`relative hidden sm:inline text-[11px] ${ui.muted} whitespace-nowrap`}>{c.bills} {c.bills === 1 ? 'bill' : 'bills'}</span>
+                          <span className={`relative text-sm font-semibold ${ui.text} tabular-nums sm:w-24 text-right whitespace-nowrap`}>{formatCurrency(c.amount)}</span>
                         </button>
                       );
                     })}
@@ -368,6 +368,23 @@ export default function FinancePage() {
                     currentPage={currentPage} totalPages={totalPages} startIndex={startIndex} endIndex={endIndex}
                     total={detailRows.length} onPage={setCurrentPage}
                   />
+                }
+                mobile={
+                  <MobileList empty={<EmptyState title="No records" />}>
+                    {pageRows.map((r: any, idx: number) => (
+                      <MobileCard key={r.id ?? idx} index={idx}>
+                        <div className="flex items-start justify-between gap-3">
+                          <EntityCell name={r.client_name} sub={r.program_name} />
+                          <span className={`text-sm font-semibold ${ui.text} tabular-nums whitespace-nowrap`}>{formatCurrency(r.client_billed_amount)}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 pl-11 text-xs">
+                          <Badge tone={AGING_TONE[r.aging_bucket] || 'gray'} dot>{r.aging_bucket}</Badge>
+                          {r.invoice_month && <Chip>{r.invoice_month}</Chip>}
+                          <span className={`truncate ${ui.muted}`}>{r.category_name}</span>
+                        </div>
+                      </MobileCard>
+                    ))}
+                  </MobileList>
                 }
               >
                 <THead>

@@ -3,9 +3,9 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
-import Cookies from 'js-cookie';
 import { getHomeForRole } from '@/lib/roles';
 import { API_URL } from '@/lib/api';
+import { isStandalone, refreshSession, saveToken, clearToken, isAuthRejection, userFromStoredToken } from '@/lib/pwa';
 
 interface User {
   id: number;
@@ -31,34 +31,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
-      axios.get(`${API_URL}/api/me`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      .then(res => {
-        setUser(res.data);
-      })
-      .catch(() => {
-        localStorage.removeItem('token');
-        Cookies.remove('token');
-      })
-      .finally(() => setLoading(false));
+      // Validates the saved session and renews it in one call, so the
+      // installed app stays signed in as long as it's opened now and then.
+      refreshSession()
+        .then((u) => setUser(u))
+        .catch((err) => {
+          if (isAuthRejection(err)) {
+            clearToken();
+            return;
+          }
+          // Couldn't reach the server: keep the session and carry on with the
+          // identity in the (unexpired) token rather than signing the user out.
+          const cached = userFromStoredToken();
+          if (cached) setUser(cached as User);
+          else clearToken();
+        })
+        .finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
   }, []);
 
   const login = async (email: string, password: string) => {
-    const res = await axios.post(`${API_URL}/api/login`, { email, password });
+    const res = await axios.post(`${API_URL}/api/login`, { email, password, app: isStandalone() });
     const { access_token, user } = res.data;
-    localStorage.setItem('token', access_token);
-    Cookies.set('token', access_token);
+    saveToken(access_token);
     setUser(user);
     router.push(getHomeForRole(user.role_id));
   };
 
   const logout = (reason?: 'inactivity') => {
-    localStorage.removeItem('token');
-    Cookies.remove('token');
+    clearToken();
     // sessionStorage rather than a ?reason= query param: setUser(null) here
     // also triggers the dashboard layout's own "no user -> /login" redirect,
     // which races this push and would otherwise strip the query string.

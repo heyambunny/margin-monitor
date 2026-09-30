@@ -10,6 +10,7 @@ import { formatINR } from '@/lib/format';
 import {
   useUi, PageHeader, RefreshButton, StatGrid, FilterBar, SearchInput, FilterSelect, ClearFiltersButton,
   TableShell, THead, Th, Tr, TdAccent, EmptyRow, Pagination, EntityCell, Chip, SidePanel, Alert, Field,
+  MobileList, MobileCard, EmptyState,
   GradientButton, GhostButton, Spinner, PageSkeleton,
 } from '@/components/app/ui';
 import { VendorRows, type VendorRow } from '@/components/app/VendorRows';
@@ -290,6 +291,26 @@ export default function ConvertBillingPage() {
             total={filteredProjections.length} onPage={setCurrentPage}
           />
         }
+        mobile={
+          <MobileList empty={<EmptyState title={projections.length === 0 ? 'Nothing waiting to be billed' : 'No projections match your filters'} />}>
+            {currentProjections.map((p, i) => (
+              <MobileCard key={p.id} index={i} onClick={() => handleRowSelect(p)}>
+                <div className="flex items-start justify-between gap-3">
+                  <EntityCell name={p.client_name} sub={p.program_name} />
+                  <span className={`text-sm font-semibold ${ui.text} tabular-nums whitespace-nowrap`}>{formatINR(p.amount)}</span>
+                </div>
+                {p.invoice_description && <p className={`pl-11 text-xs ${ui.textSoft} line-clamp-2`}>{p.invoice_description}</p>}
+                <div className="flex items-center gap-2 pl-11 text-xs">
+                  <span className={`font-mono ${ui.muted}`}>#{p.id}</span>
+                  {p.invoice_month && <Chip>{p.invoice_month}</Chip>}
+                  <span className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-blue-400 bg-blue-500/10">
+                    <ArrowRightLeft className="h-3 w-3" /> Bill it
+                  </span>
+                </div>
+              </MobileCard>
+            ))}
+          </MobileList>
+        }
       >
         <THead>
           <Th sortKey="id" {...sortProps}>ID</Th>
@@ -320,7 +341,7 @@ export default function ConvertBillingPage() {
                 <td className="px-4 py-3">{p.invoice_month ? <Chip>{p.invoice_month}</Chip> : <span className={ui.textSoft}>-</span>}</td>
                 <td className={`px-4 py-3 text-right text-sm font-semibold ${ui.text} whitespace-nowrap tabular-nums`}>{formatINR(p.amount)}</td>
                 <td className="px-4 py-3 text-right">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-blue-400 bg-blue-500/10 rounded-md opacity-60 group-hover:opacity-100 group-hover:bg-blue-500/20 transition whitespace-nowrap">
+                  <span className="touch-show inline-flex items-center gap-1 px-2.5 py-1 text-xs text-blue-400 bg-blue-500/10 rounded-md opacity-60 group-hover:opacity-100 group-hover:bg-blue-500/20 transition whitespace-nowrap">
                     <ArrowRightLeft className="h-3 w-3" />
                     Bill it
                   </span>
@@ -340,7 +361,7 @@ export default function ConvertBillingPage() {
         badge={<span className={`px-1.5 py-0.5 text-[10px] font-mono rounded ${ui.subtle} ${ui.muted}`}>#{selectedId}</span>}
         footer={
           <>
-            <span className={`text-[11px] ${ui.muted}`}>Esc to close</span>
+            <span className={`hidden sm:inline text-[11px] ${ui.muted}`}>Esc to close</span>
             <div className="flex items-center gap-2">
               <GhostButton onClick={closeDialog} disabled={submitting}>Cancel</GhostButton>
               {isDeleting ? (

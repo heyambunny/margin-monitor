@@ -168,7 +168,7 @@ export default function BulkUploadPage() {
               }`}>
                 {state === 'done' ? <Check className="h-4 w-4" /> : n}
               </div>
-              <span className={`text-xs whitespace-nowrap ${state === 'todo' ? ui.muted : ui.text}`}>{label}</span>
+              <span className={`text-xs whitespace-nowrap ${state === 'active' ? '' : 'hidden sm:inline'} ${state === 'todo' ? ui.muted : ui.text}`}>{label}</span>
               {n < 3 && <div className={`h-px flex-1 ${n < step ? 'bg-emerald-500' : ui.isDark ? 'bg-white/10' : 'bg-gray-200'} transition-colors`} />}
             </div>
           );

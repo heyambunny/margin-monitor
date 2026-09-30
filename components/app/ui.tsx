@@ -39,17 +39,17 @@ export function PageHeader({
 }: { icon: IconType; title: string; subtitle?: ReactNode; actions?: ReactNode; gradient?: string }) {
   const ui = useUi();
   return (
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-4 animate-in fade-in slide-in-from-top-1 duration-300">
-      <div className="flex items-center gap-3">
-        <div className={`h-10 w-10 shrink-0 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg shadow-blue-500/20`}>
+    <div className="mb-4 sm:mb-6 flex flex-wrap items-center justify-between gap-3 sm:gap-4 animate-in fade-in slide-in-from-top-1 duration-300">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={`h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg shadow-blue-500/20`}>
           <Icon className="h-5 w-5 text-white" />
         </div>
         <div>
-          <h1 className={`text-2xl font-semibold ${ui.text}`}>{title}</h1>
-          {subtitle && <p className={`text-sm ${ui.muted}`}>{subtitle}</p>}
+          <h1 className={`text-xl sm:text-2xl font-semibold ${ui.text}`}>{title}</h1>
+          {subtitle && <p className={`text-xs sm:text-sm ${ui.muted}`}>{subtitle}</p>}
         </div>
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">{actions}</div>}
     </div>
   );
 }
@@ -136,14 +136,14 @@ export function StatGrid({ stats }: { stats: Stat[] }) {
   const ui = useUi();
   const cols = stats.length >= 4 ? 'lg:grid-cols-4' : stats.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-2';
   return (
-    <div className={`grid grid-cols-2 ${cols} gap-3 mb-6`}>
+    <div className={`grid grid-cols-2 ${cols} gap-2.5 sm:gap-3 mb-4 sm:mb-6`}>
       {stats.map((s, i) => {
         const [gradient, iconColor] = STAT_COLORS[s.color || 'blue'];
         const scale = s.decimals ? 10 ** s.decimals : 1;
         return (
           <div
             key={s.label}
-            className={`relative overflow-hidden p-4 ${ui.card} rounded-xl border ${ui.border} hover:-translate-y-0.5 hover:shadow-lg ${ui.isDark ? 'hover:shadow-black/30' : 'hover:shadow-gray-200'} transition-all duration-200 animate-in fade-in slide-in-from-bottom-2 fill-mode-both`}
+            className={`relative overflow-hidden p-3 sm:p-4 ${ui.card} rounded-xl border ${ui.border} hover:-translate-y-0.5 hover:shadow-lg ${ui.isDark ? 'hover:shadow-black/30' : 'hover:shadow-gray-200'} transition-all duration-200 animate-in fade-in slide-in-from-bottom-2 fill-mode-both`}
             style={{ animationDelay: `${i * 60}ms` }}
           >
             <div className={`absolute inset-0 bg-gradient-to-br ${gradient} to-transparent pointer-events-none`} />
@@ -155,7 +155,7 @@ export function StatGrid({ stats }: { stats: Stat[] }) {
               value={Math.round(s.value * scale)}
               duration={700}
               format={(v) => (s.money ? formatINR(v / scale) : (v / scale).toLocaleString('en-IN', { maximumFractionDigits: s.decimals || 0 })) + (s.suffix || '')}
-              className={`relative text-lg font-semibold ${ui.text}`}
+              className={`relative block text-base sm:text-lg font-semibold ${ui.text} truncate`}
             />
           </div>
         );
@@ -191,7 +191,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search…' }: { va
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   return (
-    <div className="flex-1 min-w-[220px] relative">
+    <div className="basis-full sm:basis-auto flex-1 sm:min-w-[220px] relative">
       <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 ${ui.muted}`} />
       <input
         ref={ref}
@@ -206,7 +206,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search…' }: { va
           <X className="h-3.5 w-3.5" />
         </button>
       ) : (
-        <kbd className={`absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] rounded border ${ui.border} ${ui.muted}`}>/</kbd>
+        <kbd className={`hidden sm:block absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] rounded border ${ui.border} ${ui.muted}`}>/</kbd>
       )}
     </div>
   );
@@ -217,7 +217,7 @@ export function FilterSelect({
 }: { value: string; onChange: (v: string) => void; children: ReactNode; className?: string }) {
   const ui = useUi();
   return (
-    <select className={`px-3 py-2 text-sm ${ui.input} ${className}`} style={ui.colorScheme} value={value} onChange={(e) => onChange(e.target.value)}>
+    <select className={`flex-1 sm:flex-none min-w-0 px-3 py-2 text-sm ${ui.input} ${className}`} style={ui.colorScheme} value={value} onChange={(e) => onChange(e.target.value)}>
       {children}
     </select>
   );
@@ -264,15 +264,44 @@ export function Th({
   );
 }
 
-export function TableShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
+// Table on md+ screens. Pass `mobile` (usually a <MobileList>) to show cards
+// instead of the table on phones; without it the table scrolls sideways.
+export function TableShell({ children, footer, mobile }: { children: ReactNode; footer?: ReactNode; mobile?: ReactNode }) {
   const ui = useUi();
   return (
     <Card className="overflow-hidden">
-      <div className="overflow-x-auto" style={ui.colorScheme}>
+      {mobile && <div className="md:hidden">{mobile}</div>}
+      <div className={`${mobile ? 'hidden md:block' : ''} overflow-x-auto`} style={ui.colorScheme}>
         <table className="w-full text-sm">{children}</table>
       </div>
       {footer}
     </Card>
+  );
+}
+
+// Phone-sized list of tappable cards (used as TableShell's `mobile` view).
+export function MobileList({ children, empty }: { children: ReactNode; empty?: ReactNode }) {
+  const ui = useUi();
+  const items = Array.isArray(children) ? children.filter(Boolean) : children;
+  if (empty && Array.isArray(items) && items.length === 0) return <div className="px-4 py-12">{empty}</div>;
+  return <div className={`divide-y ${ui.isDark ? 'divide-white/5' : 'divide-gray-100'}`}>{items}</div>;
+}
+
+export function MobileCard({
+  children, onClick, index = 0, highlight = false,
+}: { children: ReactNode; onClick?: () => void; index?: number; highlight?: boolean }) {
+  const ui = useUi();
+  const Tag = onClick ? 'button' : 'div';
+  return (
+    <Tag
+      onClick={onClick}
+      className={`w-full text-left px-4 py-3.5 flex flex-col gap-2 transition-colors ${onClick ? `${ui.isDark ? 'active:bg-white/5' : 'active:bg-gray-100'}` : ''} ${
+        highlight ? (ui.isDark ? 'bg-emerald-500/10' : 'bg-emerald-50') : ''
+      } animate-in fade-in slide-in-from-bottom-1 fill-mode-both`}
+      style={{ animationDelay: `${Math.min(index, 12) * 25}ms` }}
+    >
+      {children}
+    </Tag>
   );
 }
 
@@ -343,14 +372,16 @@ export function Pagination({
   if (totalPages <= 1) return null;
   const go = (p: number) => onPage(Math.max(1, Math.min(p, totalPages)));
   return (
-    <div className={`px-4 py-2.5 border-t ${ui.border} flex items-center justify-between`}>
+    <div className={`px-4 py-2.5 border-t ${ui.border} flex items-center justify-between gap-2`}>
       <span className={`text-xs ${ui.muted}`}>
-        Showing <span className={ui.text}>{startIndex + 1}-{Math.min(endIndex, total)}</span> of {total}
+        <span className="hidden sm:inline">Showing </span><span className={ui.text}>{startIndex + 1}-{Math.min(endIndex, total)}</span> of {total}
       </span>
       <div className="flex items-center gap-0.5">
-        <button onClick={() => go(currentPage - 1)} disabled={currentPage === 1} className={`p-1 rounded ${ui.muted} ${ui.hoverBtn} disabled:opacity-30 transition`}>
+        <button onClick={() => go(currentPage - 1)} disabled={currentPage === 1} aria-label="Previous page" className={`p-2 sm:p-1 rounded ${ui.muted} ${ui.hoverBtn} disabled:opacity-30 transition`}>
           <ChevronLeft className="h-4 w-4" />
         </button>
+        <span className={`sm:hidden px-2 text-xs ${ui.text} tabular-nums`}>{currentPage} / {totalPages}</span>
+        <span className="hidden sm:contents">
         {getPageNumbers(currentPage, totalPages).map((page, index) =>
           typeof page === 'number' ? (
             <button
@@ -366,7 +397,8 @@ export function Pagination({
             <span key={index} className={`px-1 text-xs ${ui.muted}`}>…</span>
           )
         )}
-        <button onClick={() => go(currentPage + 1)} disabled={currentPage === totalPages} className={`p-1 rounded ${ui.muted} ${ui.hoverBtn} disabled:opacity-30 transition`}>
+        </span>
+        <button onClick={() => go(currentPage + 1)} disabled={currentPage === totalPages} aria-label="Next page" className={`p-2 sm:p-1 rounded ${ui.muted} ${ui.hoverBtn} disabled:opacity-30 transition`}>
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>
@@ -499,8 +531,8 @@ export function SidePanel({
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose} />
-      <div className={`relative h-full w-full ${width} ${ui.card} border-l ${ui.border} shadow-2xl flex flex-col animate-in slide-in-from-right duration-300`} style={ui.colorScheme}>
-        <div className={`px-6 py-4 border-b ${ui.border} flex items-start justify-between gap-4`}>
+      <div className={`relative h-[100dvh] w-full ${width} ${ui.card} border-l ${ui.border} shadow-2xl flex flex-col animate-in slide-in-from-right duration-300`} style={ui.colorScheme}>
+        <div className={`px-4 sm:px-6 py-4 border-b ${ui.border} flex items-start justify-between gap-4 pt-[calc(env(safe-area-inset-top)+1rem)] sm:pt-4`}>
           <div className="flex items-center gap-3 min-w-0">
             {avatarName !== undefined && <Avatar name={avatarName} size="lg" />}
             <div className="min-w-0">
@@ -515,8 +547,12 @@ export function SidePanel({
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">{children}</div>
-        {footer && <div className={`px-6 py-3 border-t ${ui.border} flex items-center justify-between gap-3`}>{footer}</div>}
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 sm:px-6 py-5 space-y-5">{children}</div>
+        {footer && (
+          <div className={`px-4 sm:px-6 py-3 border-t ${ui.border} flex flex-wrap items-center justify-between gap-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:pb-3`}>
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -535,9 +571,9 @@ export function Modal({
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose} />
-      <div className={`relative w-full ${width} max-h-[90vh] flex flex-col ${ui.card} rounded-xl border ${ui.border} shadow-2xl animate-in fade-in zoom-in-95 duration-200`} style={ui.colorScheme}>
+      <div className={`relative w-full ${width} max-h-[92dvh] sm:max-h-[90vh] flex flex-col ${ui.card} rounded-t-2xl sm:rounded-xl border ${ui.border} shadow-2xl animate-in fade-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200`} style={ui.colorScheme}>
         <div className={`px-5 py-3.5 border-b ${ui.border} flex items-center justify-between`}>
           <h2 className={`text-base font-semibold ${ui.text}`}>{title}</h2>
           <button onClick={onClose} className={`p-1 rounded-lg ${ui.muted} ${ui.hoverBtn} transition`}>
@@ -545,7 +581,9 @@ export function Modal({
           </button>
         </div>
         <div className="p-5 space-y-3 overflow-y-auto">{children}</div>
-        {footer && <div className={`px-5 py-3 border-t ${ui.border} flex items-center justify-end gap-2`}>{footer}</div>}
+        {footer && (
+          <div className={`px-5 py-3 border-t ${ui.border} flex items-center justify-end gap-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:pb-3`}>{footer}</div>
+        )}
       </div>
     </div>
   );

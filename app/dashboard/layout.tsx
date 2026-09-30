@@ -3,7 +3,9 @@
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter, usePathname } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { Sidebar } from '@/components/Sidebar';
+import { Sidebar, pageTitleFor } from '@/components/Sidebar';
+import { IosInstallHint } from '@/components/PwaSetup';
+import { Menu, Gem } from 'lucide-react';
 import { SessionManager } from '@/components/SessionManager';
 import { SessionProvider } from '@/lib/providers/SessionProvider';
 import { useTheme } from '@/lib/providers/ThemeProvider';
@@ -28,6 +30,19 @@ export default function DashboardLayout({
       setCollapsed(localStorage.getItem('sidebarCollapsed') === '1');
     } catch {}
   }, []);
+  // Below lg (1024px) the sidebar turns into a slide-in drawer.
+  const [isDesktop, setIsDesktop] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const sync = () => { setIsDesktop(mq.matches); if (mq.matches) setMobileOpen(false); };
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+  const closeMobile = useCallback(() => setMobileOpen(false), []);
+
   const toggleCollapsed = useCallback(() => {
     setCollapsed((c) => {
       try { localStorage.setItem('sidebarCollapsed', c ? '0' : '1'); } catch {}
@@ -70,16 +85,47 @@ export default function DashboardLayout({
     <SessionProvider>
       <div className={`flex min-h-screen ${bgColor} transition-colors duration-300`}>
         <SessionManager />
+        <IosInstallHint />
         <Toaster
-          position="bottom-right"
+          position={isDesktop ? 'bottom-right' : 'top-center'}
           toastOptions={{
             style: isDark
               ? { background: '#1b2033', color: '#fff', border: '1px solid rgba(255,255,255,0.08)', fontSize: 13 }
               : { fontSize: 13 },
           }}
         />
-        <Sidebar onLogout={logout} collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
-        <main className={`flex-1 min-w-0 ${collapsed ? 'ml-[72px]' : 'ml-64'} p-4 transition-[margin] duration-300 ease-out`}>
+        <Sidebar
+          onLogout={logout}
+          collapsed={collapsed}
+          onToggleCollapsed={toggleCollapsed}
+          isDesktop={isDesktop}
+          mobileOpen={mobileOpen}
+          onCloseMobile={closeMobile}
+        />
+
+        {/* Mobile top bar */}
+        <header
+          className={`lg:hidden fixed inset-x-0 top-0 z-30 border-b backdrop-blur-md ${isDark ? 'bg-[#0b0e1a]/85 border-white/5' : 'bg-white/85 border-gray-200'}`}
+          style={{ paddingTop: 'env(safe-area-inset-top)' }}
+        >
+          <div className="h-14 flex items-center gap-3 px-3">
+            <button
+              onClick={() => setMobileOpen(true)}
+              aria-label="Open menu"
+              className={`p-2 -ml-1 rounded-lg ${isDark ? 'text-white hover:bg-white/5' : 'text-gray-900 hover:bg-gray-100'} transition`}
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="h-8 w-8 shrink-0 rounded-lg bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
+              <Gem className="h-4 w-4 text-white" />
+            </div>
+            <span className={`text-sm font-semibold truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>{pageTitleFor(pathname)}</span>
+          </div>
+        </header>
+
+        <main
+          className={`flex-1 min-w-0 ml-0 ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-64'} px-3 sm:px-4 pt-[calc(env(safe-area-inset-top)+4.5rem)] pb-[calc(env(safe-area-inset-bottom)+1.5rem)] lg:p-4 transition-[margin] duration-300 ease-out`}
+        >
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

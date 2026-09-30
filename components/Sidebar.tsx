@@ -54,17 +54,28 @@ const NAV_GROUPS: { label: string; items: Item[] }[] = [
 
 const SESSION_SECONDS = 15 * 60;
 
+export function pageTitleFor(pathname: string) {
+  for (const g of NAV_GROUPS) for (const i of g.items) if (i.href === pathname) return i.name;
+  return 'Margin Monitor';
+}
+
 interface SidebarProps {
   onLogout: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  // Below the lg breakpoint the sidebar is a slide-in drawer instead.
+  isDesktop: boolean;
+  mobileOpen: boolean;
+  onCloseMobile: () => void;
 }
 
-export function Sidebar({ onLogout, collapsed, onToggleCollapsed }: SidebarProps) {
+export function Sidebar({ onLogout, collapsed: collapsedPref, onToggleCollapsed, isDesktop, mobileOpen, onCloseMobile }: SidebarProps) {
+  // The icon-only mode is a desktop thing; the mobile drawer always shows labels.
+  const collapsed = collapsedPref && isDesktop;
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const { user } = useAuth();
-  const { secondsUntilLogout, isWarning } = useSession();
+  const { secondsUntilLogout, isWarning, isApp } = useSession();
   const isDark = theme === 'dark';
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Hover label for the collapsed sidebar, rendered fixed so the scrolling nav can't clip it.
@@ -84,13 +95,15 @@ export function Sidebar({ onLogout, collapsed, onToggleCollapsed }: SidebarProps
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setPaletteOpen((o) => !o);
-      } else if (e.key === '[' && !typing && !e.metaKey && !e.ctrlKey) {
+      } else if (e.key === '[' && !typing && !e.metaKey && !e.ctrlKey && isDesktop) {
         onToggleCollapsed();
+      } else if (e.key === 'Escape' && !isDesktop) {
+        onCloseMobile();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onToggleCollapsed]);
+  }, [onToggleCollapsed, onCloseMobile, isDesktop]);
 
   const bg = isDark ? 'bg-[#10131f]' : 'bg-white';
   const border = isDark ? 'border-white/5' : 'border-gray-200';
@@ -107,8 +120,16 @@ export function Sidebar({ onLogout, collapsed, onToggleCollapsed }: SidebarProps
 
   return (
     <>
+      {/* Mobile drawer backdrop */}
+      {!isDesktop && mobileOpen && (
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 lg:hidden" onClick={onCloseMobile} />
+      )}
       <aside
-        className={`${collapsed ? 'w-[72px]' : 'w-64'} h-screen ${bg} ${border} border-r flex flex-col fixed left-0 top-0 z-40 transition-[width,background-color] duration-300 ease-out`}
+        className={`${collapsed ? 'w-[72px]' : 'w-[min(18rem,85vw)] lg:w-64'} h-[100dvh] ${bg} ${border} border-r flex flex-col fixed left-0 top-0 z-50 lg:z-40 transition-[width,transform,background-color] duration-300 ease-out ${
+          mobileOpen ? 'translate-x-0 shadow-2xl lg:shadow-none' : '-translate-x-full lg:translate-x-0'
+        }`}
+        style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+        aria-hidden={!isDesktop && !mobileOpen}
       >
         {/* Brand */}
         <div className={`flex items-center gap-3 h-16 px-4 border-b ${border} shrink-0`}>
@@ -134,7 +155,7 @@ export function Sidebar({ onLogout, collapsed, onToggleCollapsed }: SidebarProps
             {!collapsed && (
               <>
                 <span className="flex-1 text-left">Jump to…</span>
-                <kbd className={`px-1.5 py-0.5 rounded border ${border} text-[10px] font-sans`}>⌘K</kbd>
+                {isDesktop && <kbd className={`px-1.5 py-0.5 rounded border ${border} text-[10px] font-sans`}>⌘K</kbd>}
               </>
             )}
           </button>
@@ -162,13 +183,14 @@ export function Sidebar({ onLogout, collapsed, onToggleCollapsed }: SidebarProps
                       key={item.href}
                       href={item.href}
                       aria-label={item.name}
+                      onClick={() => !isDesktop && onCloseMobile()}
                       onMouseEnter={(e) => {
                         if (!collapsed) return;
                         const r = e.currentTarget.getBoundingClientRect();
                         setTip({ label: item.name, top: r.top + r.height / 2 });
                       }}
                       onMouseLeave={() => setTip(null)}
-                      className={`group relative flex items-center gap-3 ${collapsed ? 'justify-center px-0' : 'px-3'} py-2 rounded-lg text-sm transition-all duration-200 ${
+                      className={`group relative flex items-center gap-3 ${collapsed ? 'justify-center px-0' : 'px-3'} py-2.5 lg:py-2 rounded-lg text-sm transition-all duration-200 ${
                         active
                           ? `${isDark ? 'bg-gradient-to-r from-blue-500/20 to-purple-500/10 text-white' : 'bg-gradient-to-r from-blue-50 to-purple-50 text-blue-700'} font-medium`
                           : `${isDark ? 'text-white/70' : 'text-gray-600'} ${hover}`
@@ -199,7 +221,7 @@ export function Sidebar({ onLogout, collapsed, onToggleCollapsed }: SidebarProps
               title={collapsed ? `${user?.name ?? ''} · ${ROLE_NAMES[user?.role_id ?? 0] ?? ''}` : undefined}
             >
               {user?.name?.charAt(0)?.toUpperCase() || '?'}
-              <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 ${isDark ? 'border-[#10131f]' : 'border-white'} ${sessionUrgent ? 'bg-red-500' : sessionCaution ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+              <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 ${isDark ? 'border-[#10131f]' : 'border-white'} ${!isApp && sessionUrgent ? 'bg-red-500' : !isApp && sessionCaution ? 'bg-amber-500' : 'bg-emerald-500'}`} />
             </div>
             {!collapsed && (
               <div className="flex-1 min-w-0">
@@ -209,8 +231,8 @@ export function Sidebar({ onLogout, collapsed, onToggleCollapsed }: SidebarProps
             )}
           </div>
 
-          {/* Session countdown */}
-          {!collapsed && (
+          {/* Session countdown (web only - the installed app stays signed in) */}
+          {!collapsed && !isApp && (
             <div title="Time left before you're logged out for inactivity" className="px-1">
               <div className={`flex items-center justify-between text-[10px] mb-1 ${sessionUrgent ? 'text-red-400' : sessionCaution ? 'text-amber-400' : muted}`}>
                 <span className="flex items-center gap-1"><ShieldCheck className="h-3 w-3" />Session</span>
@@ -259,7 +281,7 @@ export function Sidebar({ onLogout, collapsed, onToggleCollapsed }: SidebarProps
           <button
             onClick={onToggleCollapsed}
             title={collapsed ? 'Expand sidebar ([)' : 'Collapse sidebar ([)'}
-            className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-2 px-2'} py-1.5 rounded-lg text-[11px] ${muted} ${hover} transition`}
+            className={`hidden lg:flex w-full items-center ${collapsed ? 'justify-center' : 'gap-2 px-2'} py-1.5 rounded-lg text-[11px] ${muted} ${hover} transition`}
           >
             {collapsed ? <ChevronsRight className="h-4 w-4" /> : <><ChevronsLeft className="h-4 w-4" /> Collapse</>}
           </button>

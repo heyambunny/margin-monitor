@@ -503,13 +503,13 @@ export default function DashboardPage() {
             <Sparkles className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h1 className={`text-2xl font-semibold ${textColor}`}>
+            <h1 className={`text-xl sm:text-2xl font-semibold ${textColor}`}>
               {now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening'}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
             </h1>
-            <p className={`text-sm ${textMuted}`}>Here&apos;s how billing and margins are tracking this financial year</p>
+            <p className={`text-xs sm:text-sm ${textMuted}`}>Here&apos;s how billing and margins are tracking this financial year</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs ${ui.subtle} border ${ui.border} ${textMuted}`}>
             <Clock className="h-3.5 w-3.5" />
             {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : 'Loading…'}
@@ -530,7 +530,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Hero: total projected billing */}
-      <div className="relative overflow-hidden rounded-2xl p-6 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-500/20 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <div className="relative overflow-hidden rounded-2xl p-5 sm:p-6 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-500/20 animate-in fade-in slide-in-from-bottom-2 duration-500">
         <div className="absolute -top-16 -right-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
         <div className="absolute -bottom-20 left-1/3 h-48 w-48 rounded-full bg-fuchsia-400/20 blur-3xl" />
         <div className="relative flex flex-wrap items-end justify-between gap-6">
@@ -539,8 +539,8 @@ export default function DashboardPage() {
               <IndianRupee className="h-4 w-4" />
               Total Projected Billing · {fyLabel}
             </p>
-            <AnimatedNumber value={total.amt} duration={1500} format={(v) => formatCurrency(v)} className="block text-4xl font-bold mt-1 tracking-tight" />
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2 text-sm text-white/85">
+            <AnimatedNumber value={total.amt} duration={1500} format={(v) => formatCurrency(v)} className="block text-3xl sm:text-4xl font-bold mt-1 tracking-tight" />
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2 text-xs sm:text-sm text-white/85">
               <span>Margin <AnimatedNumber value={total.mar} duration={1200} format={(v) => formatCurrency(v)} className="font-semibold text-white" /></span>
               <span>Margin % <Pct value={total.pct} className="font-semibold text-white" /></span>
               <span>Vendor cost <span className="font-semibold text-white">{formatCurrency(total.ven)}</span></span>
@@ -719,7 +719,7 @@ export default function DashboardPage() {
             {block.data.length === 0 ? (
               <div className="py-10"><EmptyState title="No data yet" /></div>
             ) : (
-              <div className="flex items-center gap-4">
+              <div className="flex flex-col sm:flex-row items-center gap-4">
                 <div className="relative h-[150px] w-[150px] xl:h-[180px] xl:w-[180px] shrink-0">
                   <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 150, height: 150 }}>
                     <RePieChart>
@@ -755,7 +755,7 @@ export default function DashboardPage() {
                     )}
                   </div>
                 </div>
-                <ul className="flex-1 min-w-0 space-y-0.5 max-h-[200px] overflow-y-auto" style={ui.colorScheme}>
+                <ul className="w-full sm:flex-1 min-w-0 space-y-0.5 max-h-[200px] overflow-y-auto" style={ui.colorScheme}>
                   {block.data.map((d: any, i: number) => (
                     <li
                       key={d.name + i}
@@ -823,7 +823,7 @@ export default function DashboardPage() {
       {/* Detailed client performance */}
       <Section
         title="Detailed Client Performance"
-        subtitle={`${clientRows.length} ${clientRows.length === 1 ? 'client' : 'clients'} · click a column to sort`}
+        subtitle={`${clientRows.length} ${clientRows.length === 1 ? 'client' : 'clients'} · sorted by ${({ client_name: 'name', revenue: 'revenue', vendor: 'vendor cost', margin: 'margin', margin_pct: 'margin %' })[clientSort.key]}`}
         right={
           <div className="flex flex-wrap items-center gap-2">
             <MiniSearch value={clientSearch} onChange={setClientSearch} placeholder="Find client…" />
@@ -836,7 +836,38 @@ export default function DashboardPage() {
         }
         flush
       >
-        <div className="overflow-x-auto max-h-[380px] overflow-y-auto" style={ui.colorScheme}>
+        {/* Phones: cards */}
+        <div className={`md:hidden max-h-[480px] overflow-y-auto divide-y ${isDark ? 'divide-white/5' : 'divide-gray-100'}`} style={ui.colorScheme}>
+          {clientRows.length === 0 ? (
+            <div className="py-12"><EmptyState icon={Users} title={clientSearch ? 'No clients match your search' : 'No client data available'} /></div>
+          ) : (
+            clientRows.map((client: any, idx: number) => {
+              const pct = client.margin_pct || 0;
+              const revenueShare = Math.min(((client.revenue || 0) / maxRevenue) * 100, 100);
+              return (
+                <div key={client.client_name} className="px-4 py-3 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className={`text-[11px] w-4 ${textMuted}`}>{idx + 1}</span>
+                      <Avatar name={client.client_name} size="sm" />
+                      <span className={`text-sm ${textColor} truncate`}>{client.client_name}</span>
+                    </div>
+                    <Badge tone={pctTone(pct)}>{pct.toFixed(1)}%</Badge>
+                  </div>
+                  <div className={`h-1.5 rounded-full ${isDark ? 'bg-white/10' : 'bg-gray-200'} overflow-hidden ml-6`}>
+                    <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-500" style={{ width: `${revenueShare}%` }} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 ml-6 text-[11px]">
+                    <div><p className={textMuted}>Revenue</p><p className={`font-semibold ${textColor} tabular-nums`}>{formatCurrencyShort(client.revenue || 0)}</p></div>
+                    <div><p className={textMuted}>Vendor</p><p className={`${textColor} tabular-nums`}>{formatCurrencyShort(client.vendor || 0)}</p></div>
+                    <div><p className={textMuted}>Margin</p><p className={`font-semibold tabular-nums ${(client.margin || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatCurrencyShort(client.margin || 0)}</p></div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div className="hidden md:block overflow-x-auto max-h-[380px] overflow-y-auto" style={ui.colorScheme}>
           <table className="w-full text-sm border-separate border-spacing-0">
             <thead className={`sticky top-0 z-10 ${isDark ? 'bg-[#171b2c]' : 'bg-gray-50'}`}>
               <tr>
@@ -1039,7 +1070,7 @@ function Section({
   const ui = useUi();
   return (
     <Card className={`${flush ? 'overflow-hidden' : 'p-4'} animate-in fade-in slide-in-from-bottom-2 fill-mode-both ${className}`}>
-      <div className={`flex flex-wrap items-center justify-between gap-2 ${flush ? 'px-4 pt-4 pb-3' : 'mb-3'}`}>
+      <div className={`flex flex-wrap items-center justify-between gap-2 ${flush ? 'px-4 pt-4 pb-3' : 'mb-3'} [&>*:last-child:not(:first-child)]:w-full sm:[&>*:last-child:not(:first-child)]:w-auto`}>
         <div>
           <h2 className={`text-sm font-semibold ${ui.text}`}>{title}</h2>
           {subtitle && <p className={`text-[11px] ${ui.muted}`}>{subtitle}</p>}
@@ -1073,13 +1104,13 @@ function Segmented({ value, onChange, options }: { value: string; onChange: (v: 
 function MiniSearch({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   const ui = useUi();
   return (
-    <div className="relative">
+    <div className="relative flex-1 sm:flex-none min-w-[140px]">
       <Search className={`absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${ui.muted}`} />
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`w-44 pl-8 pr-7 py-1.5 text-xs ${ui.input}`}
+        className={`w-full sm:w-44 pl-8 pr-7 py-1.5 text-xs ${ui.input}`}
       />
       {value && (
         <button onClick={() => onChange('')} className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 ${ui.muted} hover:text-red-400`}>
