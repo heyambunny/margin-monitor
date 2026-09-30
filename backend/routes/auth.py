@@ -115,8 +115,10 @@ def login(data: LoginRequest):
 
 # Swap a still-valid token for a fresh one of the same kind (web or app).
 # Re-reads the user so deactivated users or role changes take effect.
+# `?app=true` upgrades a web token when the same session is opened from the
+# installed app (Android shares browser storage with the installed app).
 @router.post("/refresh")
-def refresh(token: str = Depends(oauth2_scheme)):
+def refresh(app: bool = False, token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
@@ -137,7 +139,7 @@ def refresh(token: str = Depends(oauth2_scheme)):
 
     uid, name, role_id = row
     return {
-        "access_token": issue_token(uid, name, role_id, bool(payload.get("app"))),
+        "access_token": issue_token(uid, name, role_id, app or bool(payload.get("app"))),
         "user": {"id": uid, "name": name, "role_id": role_id},
     }
 

@@ -49,7 +49,9 @@ export function userFromStoredToken(): { id: number; name: string; role_id: numb
 export async function refreshSession() {
   const token = localStorage.getItem('token');
   if (!token) throw new Error('No session');
-  const res = await axios.post(`${API_URL}/api/refresh`, null, {
+  // In the installed app always ask for an app token, so a web login that
+  // carries over (Android shares storage with Chrome) becomes long-lived.
+  const res = await axios.post(`${API_URL}/api/refresh${isStandalone() ? '?app=true' : ''}`, null, {
     headers: { Authorization: `Bearer ${token}` },
   });
   saveToken(res.data.access_token);
