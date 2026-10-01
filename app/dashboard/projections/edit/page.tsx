@@ -18,6 +18,32 @@ import {
 
 type SortKey = 'id' | 'amount' | 'projection_date' | 'client_name';
 
+// Financial year runs Apr-Mar. Same "FY 2026-2027" format the backend writes.
+const FY_ORDER = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'];
+const fyStartOf = (invoiceMonth?: string | null) => {
+  const [m, yy] = (invoiceMonth || '').split('-');
+  const year = 2000 + Number(yy);
+  if (!m || Number.isNaN(year)) return null;
+  return FY_ORDER.indexOf(m) <= 8 ? year : year - 1; // Apr..Dec -> same year
+};
+const fyLabel = (start: number) => `FY ${start}-${start + 1}`;
+
+// Invoice month choices: the current financial year only. An entry whose
+// saved month lies outside it keeps that month as an option so the field can
+// still show (and leave) its existing value.
+function invoiceMonthGroups(current?: string | null) {
+  const now = new Date();
+  const thisFy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  const groups = [{
+    label: fyLabel(thisFy),
+    months: FY_ORDER.map((m, i) => `${m}-${String(i <= 8 ? thisFy : thisFy + 1).slice(-2)}`),
+  }];
+  if (current && !groups[0].months.includes(current)) {
+    groups.unshift({ label: 'Saved month (outside current FY)', months: [current] });
+  }
+  return groups;
+}
+
 export default function EditProjectionPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -157,6 +183,7 @@ export default function EditProjectionPage() {
       description: projection.description || '',
       amount: projection.amount || 0,
       projection_date: projection.projection_date || '',
+      invoice_month_edit: projection.invoice_month || '',
       client_name: projection.client_name,
       program_name: projection.program_name,
       category_name: projection.category_name,
@@ -202,7 +229,7 @@ export default function EditProjectionPage() {
     return (
       editingData.description !== originalData.description ||
       Number(editingData.amount) !== Number(originalData.amount) ||
-      editingData.projection_date !== originalData.projection_date ||
+      editingData.invoice_month_edit !== originalData.invoice_month_edit ||
       filledVendors.length > 0
     );
   }, [editingData, originalData, filledVendors.length]);
@@ -223,7 +250,7 @@ export default function EditProjectionPage() {
         description: editingData.description,
         amount: editAmount,
         status: 'Active',
-        projection_date: editingData.projection_date || null,
+        invoice_month: editingData.invoice_month_edit || null,
         vendors: filledVendors.map(v => ({
           vendor_id: parseInt(v.vendor_id),
           amount: parseFloat(v.amount)
@@ -273,7 +300,7 @@ export default function EditProjectionPage() {
       <PageHeader
         icon={Pencil}
         title="Edit Projections"
-        subtitle="Click any projection to update its amount, date, description or vendors"
+        subtitle="Click any projection to update its amount, invoice month, description or vendors"
         actions={<RefreshButton onClick={fetchData} loading={isFetching} />}
       />
 
@@ -402,8 +429,7 @@ export default function EditProjectionPage() {
                   ['Client', editingData.client_name],
                   ['Program', editingData.program_name],
                   ['Category', editingData.category_name],
-                  ['Invoice Month', editingData.invoice_month],
-                  ['Financial Year', editingData.financial_year],
+                  ['Projection Date', formatDate(editingData.projection_date)],
                 ].map(([label, value]) => (
                   <div key={label} className="min-w-0">
                     <p className={`text-[11px] ${ui.muted}`}>{label}</p>
@@ -434,13 +460,39 @@ export default function EditProjectionPage() {
               </div>
             </Field>
 
-            <Field label="Projection Date" icon={CalendarDays}>
-              <input
-                type="date"
-                className={`w-full px-3 py-2 text-sm ${ui.input}`}
-                value={editingData.projection_date || ''}
-                onChange={(e) => setEditingData({ ...editingData, projection_date: e.target.value })}
-              />
+            <Field
+              label="Invoice Month"
+              icon={CalendarDays}
+              hint={(() => {
+                const start = fyStartOf(editingData.invoice_month_edit);
+                if (start === null) return undefined;
+                const changed = editingData.invoice_month_edit !== originalData?.invoice_month_edit;
+                const fyChanged = changed && fyStartOf(originalData?.invoice_month_edit) !== start;
+                return (
+                  <span className={fyChanged ? 'text-amber-400 font-medium' : ''}>
+                    {fyLabel(start)}{fyChanged ? ' (financial year changes)' : ''}
+                  </span>
+                );
+              })()}
+            >
+              <select
+                className={`w-full px-3 py-2.5 text-sm ${ui.input}`}
+                style={ui.colorScheme}
+                value={editingData.invoice_month_edit || ''}
+                onChange={(e) => setEditingData({ ...editingData, invoice_month_edit: e.target.value })}
+              >
+                {!editingData.invoice_month_edit && <option value="">Select month</option>}
+                {invoiceMonthGroups(originalData?.invoice_month_edit).map((g) => (
+                  <optgroup key={g.label} label={g.label}>
+                    {g.months.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+              {editingData.invoice_month_edit !== originalData?.invoice_month_edit && (
+                <p className={`mt-1.5 text-[11px] ${ui.muted} animate-in fade-in`}>
+                  {originalData?.invoice_month_edit || '-'} → <span className={`font-medium ${ui.text}`}>{editingData.invoice_month_edit}</span>
+                </p>
+              )}
             </Field>
 
             <Field label="Description" hint={`${(editingData.description || '').length} chars`}>

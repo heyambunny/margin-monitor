@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import date
+import re
 from backend.db import get_connection, release_connection, get_user_client_ids
 from backend.auth.jwt_handler import require_roles
 from utils.audit import log_audit
@@ -16,8 +16,20 @@ class EditProjectionRequest(BaseModel):
     description: str
     amount: float
     status: str
-    projection_date: Optional[date] = None
+    # "Mmm-YY", e.g. "Mar-27". Optional; unchanged when omitted.
+    invoice_month: Optional[str] = None
     vendors: List[VendorItem] = []
+
+MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+
+def financial_year_for(invoice_month: str) -> str:
+    """FY runs Apr-Mar: Apr-26..Mar-27 -> "FY 2026-2027" (the format Add
+    Projection and Bulk Upload write)."""
+    month, yy = invoice_month.split('-')
+    year = 2000 + int(yy)
+    start = year if MONTHS.index(month) >= 3 else year - 1
+    return f"FY {start}-{start + 1}"
 
 # Edit Projection - Admin (1) and Finance (2).
 @router.post("/edit-projection/{projection_id}")
@@ -27,15 +39,22 @@ async def edit_projection(projection_id: int, data: EditProjectionRequest, user:
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT client_id, invoice_description, client_billed_amount, status, projection_date FROM billing_entries WHERE id = %s",
+            "SELECT client_id, invoice_description, client_billed_amount, status, invoice_month, financial_year FROM billing_entries WHERE id = %s",
             (projection_id,)
         )
         existing = cursor.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Projection not found")
-        old_client_id, old_description, old_amount, old_status, old_projection_date = existing
-        # Projection date is optional in the request; leave it unchanged when omitted.
-        new_projection_date = data.projection_date or old_projection_date
+        old_client_id, old_description, old_amount, old_status, old_invoice_month, old_financial_year = existing
+
+        # Invoice month is optional in the request; leave it unchanged when omitted.
+        new_invoice_month = old_invoice_month
+        new_financial_year = old_financial_year
+        if data.invoice_month and data.invoice_month != old_invoice_month:
+            if not re.fullmatch(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-\d{2}", data.invoice_month):
+                raise HTTPException(status_code=400, detail="Invoice month must look like Mar-27")
+            new_invoice_month = data.invoice_month
+            new_financial_year = financial_year_for(data.invoice_month)
 
         # Only let the user edit projections for clients they're assigned to
         if user["role_id"] != 1:
@@ -49,14 +68,16 @@ async def edit_projection(projection_id: int, data: EditProjectionRequest, user:
                 invoice_description = %s,
                 client_billed_amount = %s,
                 status = %s,
-                projection_date = %s
+                invoice_month = %s,
+                financial_year = %s
             WHERE id = %s
             RETURNING id
         """, (
             data.description,
             data.amount,
             data.status,
-            new_projection_date,
+            new_invoice_month,
+            new_financial_year,
             projection_id
         ))
 
@@ -72,10 +93,14 @@ async def edit_projection(projection_id: int, data: EditProjectionRequest, user:
             log_audit(cursor, "billing_entries", projection_id, "client_billed_amount",
                        old_amount, data.amount, "UPDATE",
                        user["user_id"], user["role_id"], "projection", "HIGH")
-        if new_projection_date != old_projection_date:
-            log_audit(cursor, "billing_entries", projection_id, "projection_date",
-                       old_projection_date, new_projection_date, "UPDATE",
-                       user["user_id"], user["role_id"], "projection", "LOW")
+        if new_invoice_month != old_invoice_month:
+            log_audit(cursor, "billing_entries", projection_id, "invoice_month",
+                       old_invoice_month, new_invoice_month, "UPDATE",
+                       user["user_id"], user["role_id"], "projection", "MEDIUM")
+        if new_financial_year != old_financial_year:
+            log_audit(cursor, "billing_entries", projection_id, "financial_year",
+                       old_financial_year, new_financial_year, "UPDATE",
+                       user["user_id"], user["role_id"], "projection", "MEDIUM")
         if data.status != old_status:
             log_audit(cursor, "billing_entries", projection_id, "status",
                        old_status, data.status, "UPDATE",
