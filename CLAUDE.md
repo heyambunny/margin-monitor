@@ -33,8 +33,16 @@ ssh -p 24 root@216.48.185.160 "systemctl restart margin-monitor-backend margin-m
 curl -s -o /dev/null -w "%{http_code}\n" https://app.marginmonitor.in/login
 ```
 
-There is no migration tool: schema changes need a one-off script run by hand
-on the prod DB before restarting the backend.
+There is no migration tool: schema changes need a one-off script in
+`backend/scripts/migrate_*.py` (idempotent), run by hand on the prod DB before
+restarting the backend:
+
+```bash
+ssh -p 24 root@216.48.185.160 "cd /root/margin-monitor && set -a && . ./.env && set +a && PYTHONPATH=. venv/bin/python backend/scripts/migrate_xxx.py"
+```
+
+Email Center needs `SMTP_HOST`, `SMTP_PORT`, `SMTP_EMAIL`, `SMTP_PASSWORD`,
+`SMTP_NAME` in the server's `.env` (restart the backend after changing them).
 
 ## Mobile & installed app (PWA)
 

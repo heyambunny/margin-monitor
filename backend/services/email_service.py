@@ -165,7 +165,29 @@ def generate_email_preview(invoice_id: int, issue_type_id: int, remarks: str):
         "cc": data["cc"]
     }
 
-def send_invoice_email(invoice_id: int, issue_type_id: int, remarks: str):
+def log_email(invoice_id, issue_type_id, subject, to_emails, cc_emails, status, error, sent_by):
+    """Record one email_logs row per recipient. Never let logging break a send."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        for kind, emails in (("to", to_emails), ("cc", cc_emails)):
+            for email in emails:
+                cur.execute("""
+                    INSERT INTO email_logs (invoice_id, issue_type_id, recipient, recipient_type, subject, status, error, sent_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (invoice_id, issue_type_id, email, kind, subject, status, error, sent_by))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Could not write email log for invoice {invoice_id}: {e}")
+    finally:
+        release_connection(conn)
+
+
+def send_invoice_email(invoice_id: int, issue_type_id: int, remarks: str, sent_by: int = None):
+    if not (SMTP_HOST and SMTP_EMAIL and SMTP_PASSWORD):
+        return {"success": False, "message": "Email sending isn't set up on this server yet (SMTP settings are missing)."}
+
     preview = generate_email_preview(invoice_id, issue_type_id, remarks)
     if not preview:
         return {"success": False, "message": "Invoice not found."}
@@ -189,6 +211,8 @@ def send_invoice_email(invoice_id: int, issue_type_id: int, remarks: str):
             server.login(SMTP_EMAIL, SMTP_PASSWORD)
             server.sendmail(SMTP_EMAIL, recipients, message.as_string())
 
+        log_email(invoice_id, issue_type_id, preview["subject"], to_emails, cc_emails, "sent", None, sent_by)
         return {"success": True, "message": "Email sent successfully."}
     except Exception as e:
+        log_email(invoice_id, issue_type_id, preview["subject"], to_emails, cc_emails, "failed", str(e), sent_by)
         return {"success": False, "message": str(e)}

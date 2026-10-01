@@ -53,7 +53,8 @@ async def send_email(data: SendRequest, user: dict = Depends(require_admin)):
         result = send_invoice_email(
             data.invoice_id,
             data.issue_type_id,
-            data.remarks
+            data.remarks,
+            sent_by=user["user_id"],
         )
         if not result["success"]:
             raise HTTPException(status_code=500, detail=result["message"])
