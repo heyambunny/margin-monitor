@@ -30,7 +30,12 @@ def get_dashboard(user: dict = Depends(require_roles(1, 3))):
             COALESCE(ve.vendor_name, '') AS vendor_name,
             COALESCE(cn.cn_amount, 0) AS credit_note,
             b.invoice_description,
-            b.status
+            b.status,
+            -- One definition of "billed" for the whole app (matches /billed):
+            -- it has an invoice number. Older entries mark this with expense
+            -- type 'Billed', Convert to Billing with status 'Billed' - both
+            -- always carry an invoice number.
+            (b.invoice_no IS NOT NULL AND b.invoice_no <> '') AS is_billed
         FROM billing_entries b
         LEFT JOIN clients c ON b.client_id = c.id
         LEFT JOIN (
@@ -43,7 +48,11 @@ def get_dashboard(user: dict = Depends(require_roles(1, 3))):
                 ON ve.vendor_id = v.id
             GROUP BY ve.billing_entry_id
         ) ve ON b.id = ve.billing_entry_id
-        LEFT JOIN credit_notes cn ON b.id = cn.billing_entry_id
+        LEFT JOIN (
+            SELECT billing_entry_id, SUM(cn_amount) AS cn_amount
+            FROM credit_notes
+            GROUP BY billing_entry_id
+        ) cn ON b.id = cn.billing_entry_id
         WHERE b.status != 'Deleted'
         """
 

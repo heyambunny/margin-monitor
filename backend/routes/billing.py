@@ -110,12 +110,20 @@ async def convert_to_billing(projection_id: int, data: ConvertBillingRequest, us
         if not data.invoice_date:
             raise HTTPException(status_code=400, detail="Invoice date is required to bill")
 
+        # Mark it billed both ways the app records "billed" (status and
+        # expense type), so every page agrees on it.
+        cursor.execute("SELECT id FROM expense_types WHERE expense_type_name = 'Billed'")
+        billed_type = cursor.fetchone()
+        if not billed_type:
+            raise HTTPException(status_code=500, detail="Expense type 'Billed' not found")
+
         # Update the projection to Billed status
         try:
             cursor.execute("""
                 UPDATE billing_entries
                 SET
                     status = 'Billed',
+                    expense_type_id = %s,
                     funnel_number = %s,
                     invoice_no = %s,
                     invoice_date = %s,
@@ -123,6 +131,7 @@ async def convert_to_billing(projection_id: int, data: ConvertBillingRequest, us
                 WHERE id = %s
                 RETURNING id
             """, (
+                billed_type[0],
                 data.funnel_number,
                 data.invoice_no,
                 data.invoice_date,

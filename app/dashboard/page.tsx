@@ -154,8 +154,8 @@ export default function DashboardPage() {
       };
     }
 
-    const billed = dashboardData.filter((d: any) => d.expense_type_id !== 1);
-    const projected = dashboardData.filter((d: any) => d.expense_type_id === 1);
+    const billed = dashboardData.filter((d: any) => d.is_billed);
+    const projected = dashboardData.filter((d: any) => !d.is_billed);
 
     const calc = (items: any[]) => {
       const amt = items.reduce((sum, d) => sum + (d.client_billed_amount || 0), 0);
@@ -248,7 +248,7 @@ export default function DashboardPage() {
           projected_vendor: 0,
         };
       }
-      if (d.expense_type_id === 1) {
+      if (!d.is_billed) {
         clientMap[name].projected_revenue += d.client_billed_amount || 0;
         clientMap[name].projected_margin += (d.client_billed_amount || 0) - (d.vendor_cost || 0) - (d.credit_note || 0);
         clientMap[name].projected_vendor += d.vendor_cost || 0;
@@ -324,7 +324,7 @@ export default function DashboardPage() {
       const margin = amt - (d.vendor_cost || 0) - (d.credit_note || 0);
       const bucket = monthlyClientMap[name];
 
-      if (d.expense_type_id === 1) {
+      if (!d.is_billed) {
         bucket.projected[month] += amt;
         bucket.projectedGM[month] += margin;
       } else {
