@@ -48,6 +48,9 @@ type Payment = {
 const today = () => new Date().toISOString().split('T')[0];
 const EMPTY = { payment_date: today(), amount: '', tds_amount: '', payment_mode: 'NEFT', reference_no: '', remarks: '' };
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const TDS_RATES = [1, 2, 10];
+
 const authHeaders = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` });
 
 // Side panel to see an invoice's payments and record / edit / delete them.
@@ -67,6 +70,9 @@ export function PaymentPanel({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  // Full: amount received is always "what's outstanding minus TDS" and
+  // recalculates as TDS changes. Partial: the user types the amount.
+  const [payType, setPayType] = useState<'full' | 'partial'>('full');
 
   const load = async (id: number) => {
     setLoadingList(true);
@@ -79,9 +85,16 @@ export function PaymentPanel({
     }
   };
 
+  // Fresh form for a new payment: full payment of what's outstanding, prefilled.
+  const freshForm = (inv: ReceivableInvoice) => {
+    const full = inv.outstanding > 0;
+    setPayType(full ? 'full' : 'partial');
+    setForm({ ...EMPTY, payment_date: today(), amount: full ? String(round2(inv.outstanding)) : '' });
+  };
+
   useEffect(() => {
     if (!invoice) return;
-    setForm(EMPTY);
+    freshForm(invoice);
     setEditingId(null);
     setError('');
     setConfirmDelete(null);
@@ -98,7 +111,24 @@ export function PaymentPanel({
   const after = baseOutstanding - amount - tds;
   const afterStatus = amount + tds <= 0 ? null : after > 0.5 ? 'Partially Paid' : after < -0.5 ? 'Overpaid' : 'Paid';
 
+  const fullAmountFor = (tdsValue: number) => round2(Math.max(baseOutstanding - tdsValue, 0));
+
+  const setTds = (value: string) => {
+    const next = { ...form, tds_amount: value };
+    if (payType === 'full') next.amount = String(fullAmountFor(Number(value) || 0));
+    setForm(next);
+  };
+
+  // TDS as a % of the billed amount (net of credit notes).
+  const applyTdsRate = (pct: number) => setTds(String(round2((invoice.due * pct) / 100)));
+
+  const choosePayType = (type: 'full' | 'partial') => {
+    setPayType(type);
+    setForm({ ...form, amount: type === 'full' ? String(fullAmountFor(tds)) : '' });
+  };
+
   const startEdit = (p: Payment) => {
+    setPayType('partial');
     setEditingId(p.id);
     setForm({
       payment_date: p.payment_date,
@@ -113,13 +143,8 @@ export function PaymentPanel({
 
   const cancelEdit = () => {
     setEditingId(null);
-    setForm(EMPTY);
+    freshForm(invoice);
     setError('');
-  };
-
-  const fillFull = () => {
-    const rest = Math.max(baseOutstanding - tds, 0);
-    setForm({ ...form, amount: String(Math.round(rest * 100) / 100) });
   };
 
   const save = async (e: React.FormEvent) => {
@@ -135,11 +160,10 @@ export function PaymentPanel({
         : await fetch(`${API_URL}/api/receivables/${invoice.id}/payments`, { method: 'POST', headers: authHeaders(), body });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Could not save the payment');
-      toast.success(editingId ? 'Payment updated' : `${formatINR(amount)} recorded against ${invoice.invoice_no}`);
-      setEditingId(null);
-      setForm(EMPTY);
-      await load(invoice.id);
+      toast.success(editingId ? `Payment updated for ${invoice.invoice_no}` : `${formatINR(amount)} recorded against ${invoice.invoice_no}`);
+      // Done with this invoice: close the panel and refresh the list behind it.
       onChanged();
+      onClose();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -221,45 +245,81 @@ export function PaymentPanel({
         <form id="payment-form" onSubmit={save} className={`rounded-xl border ${editingId ? 'border-blue-500/50' : ui.border} p-4 space-y-4`}>
           <div className="flex items-center justify-between">
             <h3 className={`text-sm font-semibold ${ui.text}`}>{editingId ? 'Edit payment' : 'Record a payment'}</h3>
-            {!editingId && invoice.outstanding > 0 && (
-              <button
-                type="button"
-                onClick={fillFull}
-                className="text-xs px-2.5 py-1 rounded-md text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition"
-              >
-                Full payment ({formatINR(Math.max(invoice.outstanding - tds, 0))})
-              </button>
-            )}
           </div>
           {error && <Alert tone="error">{error}</Alert>}
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Amount received *">
-              <div className="relative">
-                <span className={`absolute left-3 top-1/2 -translate-y-1/2 ${ui.muted}`}>₹</span>
-                <input
-                  type="number" step="0.01" min="0" inputMode="decimal"
-                  className={`w-full pl-7 pr-3 py-2 text-sm font-semibold tabular-nums ${ui.input}`}
-                  value={form.amount}
-                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                  placeholder="0"
-                  autoFocus
-                />
-              </div>
-            </Field>
-            <Field label="TDS deducted">
-              <div className="relative">
-                <span className={`absolute left-3 top-1/2 -translate-y-1/2 ${ui.muted}`}>₹</span>
-                <input
-                  type="number" step="0.01" min="0" inputMode="decimal"
-                  className={`w-full pl-7 pr-3 py-2 text-sm tabular-nums ${ui.input}`}
-                  value={form.tds_amount}
-                  onChange={(e) => setForm({ ...form, tds_amount: e.target.value })}
-                  placeholder="0"
-                />
-              </div>
-            </Field>
+          {/* Full / partial */}
+          <div className={`grid grid-cols-2 p-1 rounded-lg ${ui.subtle} border ${ui.border}`}>
+            {([['full', 'Full payment'], ['partial', 'Partial payment']] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => choosePayType(value)}
+                disabled={value === 'full' && baseOutstanding <= 0}
+                className={`py-1.5 text-xs font-medium rounded-md transition disabled:opacity-40 ${
+                  payType === value ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow' : `${ui.muted} ${ui.hoverBtn}`
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
+
+          <Field
+            label="TDS deducted"
+            hint={
+              <span className="flex items-center gap-1">
+                {TDS_RATES.map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => applyTdsRate(pct)}
+                    className={`px-1.5 py-0.5 rounded border ${ui.border} ${ui.hoverBtn} text-[11px]`}
+                    title={`${pct}% of ${formatINR(invoice.due)}`}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+                {tds > 0 && (
+                  <button type="button" onClick={() => setTds('')} className="px-1.5 py-0.5 text-[11px] text-red-400">Clear</button>
+                )}
+              </span>
+            }
+          >
+            <div className="relative">
+              <span className={`absolute left-3 top-1/2 -translate-y-1/2 ${ui.muted}`}>₹</span>
+              <input
+                type="number" step="0.01" min="0" inputMode="decimal"
+                className={`w-full pl-7 pr-3 py-2 text-sm tabular-nums ${ui.input}`}
+                value={form.tds_amount}
+                onChange={(e) => setTds(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            {tds > 0 && invoice.due > 0 && (
+              <p className={`mt-1 text-[11px] ${ui.muted}`}>{round2((tds / invoice.due) * 100)}% of {formatINR(invoice.due)}</p>
+            )}
+          </Field>
+
+          <Field
+            label="Amount received *"
+            hint={payType === 'full' ? <span className="text-emerald-400">Outstanding − TDS, auto-filled</span> : undefined}
+          >
+            <div className="relative">
+              <span className={`absolute left-3 top-1/2 -translate-y-1/2 ${ui.muted}`}>₹</span>
+              <input
+                type="number" step="0.01" min="0" inputMode="decimal"
+                className={`w-full pl-7 pr-3 py-2.5 text-base font-semibold tabular-nums ${ui.input} ${payType === 'full' ? 'ring-1 ring-emerald-500/30' : ''}`}
+                value={form.amount}
+                onChange={(e) => {
+                  // Typing your own amount means it's a partial payment.
+                  setPayType('partial');
+                  setForm({ ...form, amount: e.target.value });
+                }}
+                placeholder="0"
+              />
+            </div>
+          </Field>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Received on *" icon={CalendarDays}>
