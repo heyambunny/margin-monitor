@@ -21,6 +21,7 @@ export default function manifest(): MetadataRoute.Manifest {
     shortcuts: [
       { name: 'Add Projection', url: '/dashboard/projections/add', icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }] },
       { name: 'Convert to Billing', url: '/dashboard/billing/convert', icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }] },
+      { name: 'Receivables', url: '/dashboard/receivables', icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }] },
       { name: 'Finance', url: '/dashboard/finance', icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }] },
     ],
   };

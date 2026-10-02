@@ -10,6 +10,7 @@ import {
   useUi, PageHeader, RefreshButton, StatGrid, FilterBar, SearchInput, FilterSelect, ClearFiltersButton,
   TableShell, THead, Th, Tr, EmptyRow, Pagination, Badge, Chip, PageSkeleton,
 } from '@/components/app/ui';
+import { PAYMENT_STATUS_TONE } from '@/components/app/PaymentPanel';
 
 export default function ReportsPage() {
   const { user, loading } = useAuth();
@@ -242,6 +243,11 @@ export default function ReportsPage() {
         );
       },
     },
+    { label: 'Received', csv: r => r.received ?? '', cell: r => (r.received == null ? <span className={tableTextMuted}>-</span> : <span className="text-emerald-400">{formatCurrency(r.received)}</span>) },
+    { label: 'TDS', csv: r => r.tds_received ?? '', cell: r => (r.tds_received == null ? <span className={tableTextMuted}>-</span> : money(x => x.tds_received)(r)) },
+    { label: 'Outstanding', csv: r => r.outstanding ?? '', cell: r => (r.outstanding == null ? <span className={tableTextMuted}>-</span> : <span className={r.outstanding > 0 ? 'text-amber-400 font-medium' : tableTextMuted}>{formatCurrency(r.outstanding)}</span>) },
+    { label: 'Payment Status', csv: r => r.payment_status ?? '', cell: r => (r.payment_status ? <Badge tone={PAYMENT_STATUS_TONE[r.payment_status] || 'gray'} dot>{r.payment_status}</Badge> : <span className={tableTextMuted}>-</span>) },
+    { label: 'Last Payment', csv: r => r.last_payment_date ?? '', cell: r => <span className={tableTextMuted}>{r.last_payment_date || '-'}</span> },
     { label: 'Created By', csv: r => r.created_by, cell: text('created_by') },
     { label: 'Reason', csv: r => r.reason, cell: text('reason') },
   ];

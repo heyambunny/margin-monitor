@@ -64,5 +64,11 @@ Email Center needs `SMTP_HOST`, `SMTP_PORT`, `SMTP_EMAIL`, `SMTP_PASSWORD`,
 - "Billed" is recorded two ways: `status = 'Billed'` (Convert to Billing) and
   `expense_type_id = 2` / 'Billed' (older entries, status stays 'Active').
   Code that asks "is this billed?" must handle both.
+- Receivables: payments against billed invoices live in `payments`
+  (`backend/scripts/migrate_payments.py`). Received / outstanding / payment
+  status are computed only in `backend/services/receivables.py`
+  (outstanding = billed - credit notes - received - TDS) and reused by
+  Receivables, Billed, Dashboard and Reports. Deleting a payment is a soft
+  delete; an invoice with payments can't be unbilled.
 - Business figures are confidential: never put real numbers, client names or
   invoice numbers into sample/decorative UI (especially the public login page).

@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 from backend.db import get_connection, release_connection
 from backend.auth.jwt_handler import get_current_user
+from backend.services.receivables import PAYMENTS_AGG_SQL, payment_summary
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
@@ -20,7 +21,7 @@ def get_reports(token: str = Depends(oauth2_scheme)):
         cursor = conn.cursor()
 
         # ---------------- QUERY ----------------
-        query = """
+        query = f"""
         SELECT
             b.id,
             c.client_name,
@@ -62,7 +63,11 @@ def get_reports(token: str = Depends(oauth2_scheme)):
             ) AS gross_margin,
 
             b.status,
-            b.reason
+            b.reason,
+            (b.invoice_no IS NOT NULL AND b.invoice_no <> '') AS is_billed,
+            pay.received AS received,
+            pay.tds AS tds_received,
+            pay.last_payment_date
 
         FROM billing_entries b
 
@@ -92,6 +97,7 @@ def get_reports(token: str = Depends(oauth2_scheme)):
             GROUP BY billing_entry_id
         ) v_total ON b.id = v_total.billing_entry_id
 
+        LEFT JOIN ({PAYMENTS_AGG_SQL}) pay ON pay.billing_entry_id = b.id
         LEFT JOIN (
             SELECT billing_entry_id, SUM(cn_amount) AS total_cn
             FROM credit_notes
@@ -127,7 +133,10 @@ def get_reports(token: str = Depends(oauth2_scheme)):
             cat.category_name,
             u.name,
             v_total.total_vendor,
-            cn_total.total_cn
+            cn_total.total_cn,
+            pay.received,
+            pay.tds,
+            pay.last_payment_date
         ORDER BY b.id DESC
         """
 
@@ -135,6 +144,13 @@ def get_reports(token: str = Depends(oauth2_scheme)):
 
         columns = [desc[0] for desc in cursor.description]
         data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        for row in data:
+            if row["is_billed"]:
+                summary = payment_summary(row["client_billed_amount"], row["total_credit_note"], row["received"], row["tds_received"])
+                row.update(received=summary["received"], tds_received=summary["tds"],
+                           outstanding=summary["outstanding"], payment_status=summary["payment_status"])
+            else:
+                row.update(received=None, tds_received=None, outstanding=None, payment_status=None)
 
         return data
 

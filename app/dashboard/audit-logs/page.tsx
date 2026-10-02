@@ -17,7 +17,7 @@ import {
 const ACTION_TONE: Record<string, BadgeTone> = { INSERT: 'green', UPDATE: 'blue', DELETE: 'red' };
 const IMPACT_TONE: Record<string, BadgeTone> = { HIGH: 'red', MEDIUM: 'amber', LOW: 'green' };
 const MODULE_LABEL: Record<string, string> = {
-  projection: 'Projection', billing: 'Billing', bulk_upload: 'Bulk Upload', user_management: 'User Management',
+  projection: 'Projection', billing: 'Billing', receivables: 'Receivables', bulk_upload: 'Bulk Upload', user_management: 'User Management',
 };
 
 const ImpactIcon = ({ impact }: { impact: string }) => {

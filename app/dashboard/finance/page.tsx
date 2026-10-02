@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { IndianRupee, Receipt, Clock, AlertTriangle, Download, CheckCircle2, Wallet } from 'lucide-react';
+import { IndianRupee, Receipt, Clock, AlertTriangle, Download, CheckCircle2, Wallet, HandCoins, ChevronRight } from 'lucide-react';
+import Link from 'next/link';
 import { API_URL } from '@/lib/api';
 import {
   useUi, PageHeader, RefreshButton, StatGrid, FilterBar, FilterSelect, ClearFiltersButton, Card,
@@ -53,6 +54,7 @@ export default function FinancePage() {
   const ui = useUi();
 
   const [records, setRecords] = useState<any[]>([]);
+  const [collection, setCollection] = useState<{ outstanding: number; invoices: number; overdue: number } | null>(null);
   const [isFetching, setIsFetching] = useState(true);
   const [error, setError] = useState('');
 
@@ -91,6 +93,19 @@ export default function FinancePage() {
       }
       const result = await res.json();
       setRecords(Array.isArray(result) ? result : []);
+
+      // Invoiced but not yet paid - summary for the "pending collection" strip.
+      fetch(`${API_URL}/api/receivables`, { headers })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((rows) => {
+          const open = (Array.isArray(rows) ? rows : []).filter((x: any) => x.outstanding > 0);
+          setCollection({
+            outstanding: open.reduce((s: number, x: any) => s + x.outstanding, 0),
+            invoices: open.length,
+            overdue: open.filter((x: any) => (x.days_since_invoice ?? 0) > 60).reduce((s: number, x: any) => s + x.outstanding, 0),
+          });
+        })
+        .catch(() => setCollection(null));
     } catch (err: any) {
       console.error('Finance dashboard error:', err);
       setError(err.message || 'Failed to load data');
@@ -234,6 +249,36 @@ export default function FinancePage() {
           </>
         }
       />
+
+      {collection && (
+        <Link
+          href="/dashboard/receivables"
+          className={`group mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 p-4 rounded-xl border ${ui.border} ${ui.card} hover:border-emerald-500/40 transition animate-in fade-in`}
+        >
+          <span className="flex items-center gap-2.5">
+            <span className="h-9 w-9 rounded-lg bg-emerald-500/15 flex items-center justify-center"><HandCoins className="h-4 w-4 text-emerald-400" /></span>
+            <span>
+              <span className={`block text-sm font-semibold ${ui.text}`}>Pending collection</span>
+              <span className={`block text-[11px] ${ui.muted}`}>Invoiced but not yet paid</span>
+            </span>
+          </span>
+          <span className="tabular-nums">
+            <span className={`block text-[11px] ${ui.muted}`}>Outstanding</span>
+            <span className="text-base font-bold text-amber-400">{formatCurrency(collection.outstanding)}</span>
+          </span>
+          <span className="tabular-nums">
+            <span className={`block text-[11px] ${ui.muted}`}>Invoices</span>
+            <span className={`text-base font-bold ${ui.text}`}>{collection.invoices}</span>
+          </span>
+          <span className="tabular-nums">
+            <span className={`block text-[11px] ${ui.muted}`}>Overdue 60+ days</span>
+            <span className="text-base font-bold text-rose-400">{formatCurrency(collection.overdue)}</span>
+          </span>
+          <span className="ml-auto flex items-center gap-1 text-xs text-emerald-400">
+            Open Receivables <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </Link>
+      )}
 
       {pending.length === 0 ? (
         <Card className="p-12">

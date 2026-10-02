@@ -10,7 +10,7 @@ import { ROLE_PAGES, ROLE_NAMES } from '@/lib/roles';
 import { avatarColor } from '@/lib/format';
 import {
   LayoutDashboard, PlusCircle, ArrowRightLeft, Receipt, Pencil, FileBarChart, Wallet, LayoutGrid, UserCog,
-  CloudUpload, History, Mail, LogOut, Gem, Sun, Moon, Search, ChevronsLeft, ChevronsRight, ShieldCheck, CornerDownLeft,
+  CloudUpload, History, Mail, HandCoins, LogOut, Gem, Sun, Moon, Search, ChevronsLeft, ChevronsRight, ShieldCheck, CornerDownLeft,
 } from 'lucide-react';
 
 type Item = { name: string; href: string; icon: ComponentType<{ className?: string }>; keywords?: string };
@@ -40,6 +40,7 @@ const NAV_GROUPS: { label: string; items: Item[] }[] = [
     items: [
       { name: 'Convert to Billing', href: '/dashboard/billing/convert', icon: ArrowRightLeft, keywords: 'invoice bill' },
       { name: 'Billed', href: '/dashboard/billing', icon: Receipt, keywords: 'invoices unbill' },
+      { name: 'Receivables', href: '/dashboard/receivables', icon: HandCoins, keywords: 'payments received collections outstanding' },
       { name: 'Email Center', href: '/dashboard/email-center', icon: Mail, keywords: 'send reminder' },
     ],
   },

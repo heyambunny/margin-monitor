@@ -291,17 +291,23 @@ export function MobileCard({
   children, onClick, index = 0, highlight = false,
 }: { children: ReactNode; onClick?: () => void; index?: number; highlight?: boolean }) {
   const ui = useUi();
-  const Tag = onClick ? 'button' : 'div';
+  // A div with button semantics (not a <button>) so cards can hold their own
+  // buttons, e.g. Unbill, without nesting buttons.
   return (
-    <Tag
+    <div
       onClick={onClick}
-      className={`w-full text-left px-4 py-3.5 flex flex-col gap-2 transition-colors ${onClick ? `${ui.isDark ? 'active:bg-white/5' : 'active:bg-gray-100'}` : ''} ${
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => {
+        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onClick(); }
+      } : undefined}
+      className={`w-full text-left px-4 py-3.5 flex flex-col gap-2 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 ${onClick ? `cursor-pointer ${ui.isDark ? 'active:bg-white/5' : 'active:bg-gray-100'}` : ''} ${
         highlight ? (ui.isDark ? 'bg-emerald-500/10' : 'bg-emerald-50') : ''
       } animate-in fade-in slide-in-from-bottom-1 fill-mode-both`}
       style={{ animationDelay: `${Math.min(index, 12) * 25}ms` }}
     >
       {children}
-    </Tag>
+    </div>
   );
 }
 

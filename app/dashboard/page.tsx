@@ -7,7 +7,7 @@ import { useTheme } from '@/lib/providers/ThemeProvider';
 import { AnimatedNumber } from '@/components/ui/animated-number';
 import {
   TrendingUp, IndianRupee, Users, Receipt, RefreshCw, BarChart3, Activity, Zap, Clock,
-  TrendingDown, Calendar, Search, X, ChevronUp, ChevronDown, Sparkles, AlertTriangle,
+  TrendingDown, Calendar, Search, X, ChevronUp, ChevronDown, Sparkles, AlertTriangle, HandCoins, Wallet,
 } from 'lucide-react';
 import {
   Area,
@@ -52,12 +52,13 @@ export default function DashboardPage() {
   const [error, setError] = useState('');
   const [expenseFilter, setExpenseFilter] = useState('all');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [trendMode, setTrendMode] = useState<'both' | 'revenue' | 'margin'>('both');
+  const [trendMode, setTrendMode] = useState<'both' | 'revenue' | 'margin' | 'collected'>('both');
   const [clientSearch, setClientSearch] = useState('');
   const [clientSort, setClientSort] = useState<{ key: 'client_name' | 'revenue' | 'vendor' | 'margin' | 'margin_pct'; dir: 'asc' | 'desc' }>({ key: 'revenue', dir: 'desc' });
   const [monthlySearch, setMonthlySearch] = useState('');
   const [activeVendor, setActiveVendor] = useState<number | null>(null);
   const [activeClient, setActiveClient] = useState<number | null>(null);
+  const [collections, setCollections] = useState<{ month: string; received: number; tds: number }[]>([]);
   const ui = useUi();
 
   const bgColor = isDark ? 'bg-[#0b0e1a]' : 'bg-gray-50';
@@ -99,6 +100,12 @@ export default function DashboardPage() {
       const data = await res.json();
       setDashboardData(Array.isArray(data) ? data : []);
       setLastUpdated(new Date());
+
+      // Monthly payments received (for the trend chart); not fatal if it fails.
+      fetch(`${API_URL}/api/dashboard/collections`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((c) => setCollections(Array.isArray(c) ? c : []))
+        .catch(() => setCollections([]));
     } catch (err: any) {
       console.error('Dashboard error:', err);
       setError(err.message || 'Failed to load dashboard');
@@ -471,6 +478,29 @@ export default function DashboardPage() {
 
   const billedShare = total.amt > 0 ? (billed.amt / total.amt) * 100 : 0;
 
+  // Collections: payments (incl. TDS) against billed entries, and what's left
+  // to collect (billed - credit notes - received), per entry and per client.
+  const sixtyDaysAgo = Date.now() - 60 * 24 * 3600 * 1000;
+  const collection = { collected: 0, outstanding: 0, overdue: 0 };
+  const clientCollections: Record<string, { collected: number; outstanding: number }> = {};
+  dashboardData.forEach((d: any) => {
+    if (!d.is_billed) return;
+    const settled = (d.received || 0) + (d.tds_received || 0);
+    const left = Math.max((d.client_billed_amount || 0) - (d.credit_note || 0) - settled, 0);
+    collection.collected += settled;
+    collection.outstanding += left;
+    if (d.invoice_date && new Date(d.invoice_date).getTime() < sixtyDaysAgo) collection.overdue += left;
+    const c = (clientCollections[d.client_name || 'Unknown'] ||= { collected: 0, outstanding: 0 });
+    c.collected += settled;
+    c.outstanding += left;
+  });
+  const collectedShare = collection.collected + collection.outstanding > 0
+    ? (collection.collected / (collection.collected + collection.outstanding)) * 100 : 0;
+  const trendData = chartData.map((m: any) => {
+    const c = collections.find((x) => x.month === m.month);
+    return { ...m, collected: c ? c.received + c.tds : 0 };
+  });
+
   // Detailed client table: search + sort on top of the Billed/Projected/All filter.
   const clientRows = clientData
     .filter((c: any) => !clientSearch || (c.client_name || '').toLowerCase().includes(clientSearch.toLowerCase()))
@@ -559,6 +589,17 @@ export default function DashboardPage() {
               <span className="font-medium">{formatCurrencyShort(billed.amt)}</span>
               <span className="font-medium">{formatCurrencyShort(projected.amt)}</span>
             </div>
+            <div className="flex justify-between text-xs text-white/80 mt-3 mb-1.5">
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-300" />Collected {collectedShare.toFixed(0)}%</span>
+              <span className="flex items-center gap-1.5">Outstanding {(100 - collectedShare).toFixed(0)}%<span className="h-2 w-2 rounded-full bg-white/40" /></span>
+            </div>
+            <div className="h-2.5 rounded-full bg-white/20 overflow-hidden">
+              <div className="h-full rounded-full bg-emerald-300 transition-all duration-1000" style={{ width: `${collectedShare}%` }} />
+            </div>
+            <div className="flex justify-between text-xs mt-1.5">
+              <span className="font-medium">{formatCurrencyShort(collection.collected)}</span>
+              <span className="font-medium">{formatCurrencyShort(collection.outstanding)}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -615,6 +656,26 @@ export default function DashboardPage() {
         })}
       </div>
 
+      {/* Collections */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[
+          { label: 'Collected', sub: 'Payments + TDS received', value: collection.collected, icon: HandCoins, cls: 'text-emerald-400', accent: 'from-emerald-500/15' },
+          { label: 'Outstanding', sub: 'Billed, not yet received', value: collection.outstanding, icon: Wallet, cls: 'text-amber-400', accent: 'from-amber-500/15' },
+          { label: 'Overdue', sub: 'Outstanding, invoiced 60+ days ago', value: collection.overdue, icon: AlertTriangle, cls: 'text-rose-400', accent: 'from-rose-500/15' },
+        ].map((c, i) => (
+          <div
+            key={c.label}
+            className={`relative overflow-hidden p-4 rounded-xl border ${ui.border} ${cardBg} animate-in fade-in slide-in-from-bottom-2 fill-mode-both`}
+            style={{ animationDelay: `${250 + i * 60}ms` }}
+          >
+            <div className={`absolute inset-0 bg-gradient-to-br ${c.accent} to-transparent pointer-events-none`} />
+            <p className={`relative flex items-center gap-1.5 text-xs ${textMuted}`}><c.icon className={`h-4 w-4 ${c.cls}`} />{c.label}</p>
+            <AnimatedNumber value={c.value} duration={1000} format={(v) => formatCurrency(v)} className={`relative block text-xl font-bold mt-1 ${textColor}`} />
+            <p className={`relative text-[11px] ${textMuted}`}>{c.sub}</p>
+          </div>
+        ))}
+      </div>
+
       {/* Revenue vs Margin trend */}
       <Section
         title="Revenue vs Margin"
@@ -623,17 +684,21 @@ export default function DashboardPage() {
           <Segmented
             value={trendMode}
             onChange={(v) => setTrendMode(v as typeof trendMode)}
-            options={[['both', 'Both'], ['revenue', 'Revenue'], ['margin', 'Margin']]}
+            options={[['both', 'All'], ['revenue', 'Revenue'], ['margin', 'Margin'], ['collected', 'Collected']]}
           />
         }
       >
         <div className="h-[260px] w-full">
           <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 260 }}>
-            <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+            <AreaChart data={trendData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
               <defs>
                 <linearGradient id="fillRevenue" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
                   <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="fillCollected" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
                 </linearGradient>
                 <linearGradient id="fillMargin" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#a855f7" stopOpacity={0.4} />
@@ -644,11 +709,14 @@ export default function DashboardPage() {
               <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} tick={tickStyle} />
               <YAxis tickLine={false} axisLine={false} tick={tickStyle} width={50} tickFormatter={(value) => `₹${(value / 100000).toFixed(0)}L`} />
               <Tooltip contentStyle={tooltipStyle} cursor={{ stroke: chartTickColor, strokeDasharray: '3 3' }} formatter={(value) => `₹${(Number(value) / 100000).toFixed(2)}L`} />
-              {trendMode !== 'margin' && (
+              {(trendMode === 'both' || trendMode === 'revenue') && (
                 <Area dataKey="revenue" name="Revenue" type="monotone" fill="url(#fillRevenue)" stroke="#3b82f6" strokeWidth={2.5} activeDot={{ r: 5 }} />
               )}
-              {trendMode !== 'revenue' && (
+              {(trendMode === 'both' || trendMode === 'margin') && (
                 <Area dataKey="margin" name="Margin" type="monotone" fill="url(#fillMargin)" stroke="#a855f7" strokeWidth={2.5} activeDot={{ r: 5 }} />
+              )}
+              {(trendMode === 'both' || trendMode === 'collected') && (
+                <Area dataKey="collected" name="Collected (by payment month)" type="monotone" fill="url(#fillCollected)" stroke="#10b981" strokeWidth={2.5} activeDot={{ r: 5 }} />
               )}
               <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendText} />
             </AreaChart>
@@ -862,6 +930,12 @@ export default function DashboardPage() {
                     <div><p className={textMuted}>Vendor</p><p className={`${textColor} tabular-nums`}>{formatCurrencyShort(client.vendor || 0)}</p></div>
                     <div><p className={textMuted}>Margin</p><p className={`font-semibold tabular-nums ${(client.margin || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatCurrencyShort(client.margin || 0)}</p></div>
                   </div>
+                  {clientCollections[client.client_name] && (
+                    <div className="grid grid-cols-3 gap-2 ml-6 text-[11px]">
+                      <div><p className={textMuted}>Collected</p><p className="text-emerald-400 tabular-nums">{formatCurrencyShort(clientCollections[client.client_name].collected)}</p></div>
+                      <div><p className={textMuted}>Outstanding</p><p className={`tabular-nums ${clientCollections[client.client_name].outstanding > 0 ? 'text-amber-400 font-semibold' : textMuted}`}>{formatCurrencyShort(clientCollections[client.client_name].outstanding)}</p></div>
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -888,12 +962,14 @@ export default function DashboardPage() {
                     </button>
                   </th>
                 ))}
+                <th className={`px-4 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide whitespace-nowrap ${textMuted} border-b ${ui.border}`}>Collected</th>
+                <th className={`px-4 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide whitespace-nowrap ${textMuted} border-b ${ui.border}`}>Outstanding</th>
               </tr>
             </thead>
             <tbody>
               {clientRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12"><EmptyState icon={Users} title={clientSearch ? 'No clients match your search' : 'No client data available'} /></td>
+                  <td colSpan={8} className="py-12"><EmptyState icon={Users} title={clientSearch ? 'No clients match your search' : 'No client data available'} /></td>
                 </tr>
               ) : (
                 clientRows.map((client: any, idx: number) => {
@@ -922,6 +998,8 @@ export default function DashboardPage() {
                         </span>
                       </td>
                       <td className={`px-4 py-2.5 text-right border-b ${ui.rowBorder}`}><Badge tone={pctTone(pct)}>{pct.toFixed(1)}%</Badge></td>
+                      <td className={`px-4 py-2.5 text-right text-sm text-emerald-400 tabular-nums border-b ${ui.rowBorder}`}>{formatCurrencyShort(clientCollections[client.client_name]?.collected || 0)}</td>
+                      <td className={`px-4 py-2.5 text-right text-sm tabular-nums border-b ${ui.rowBorder} ${(clientCollections[client.client_name]?.outstanding || 0) > 0 ? 'text-amber-400 font-semibold' : textMuted}`}>{formatCurrencyShort(clientCollections[client.client_name]?.outstanding || 0)}</td>
                     </tr>
                   );
                 })

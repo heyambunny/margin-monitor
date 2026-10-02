@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from backend.db import get_connection, release_connection
 from backend.auth.jwt_handler import get_current_user, require_admin
 from utils.audit import log_audit
+from backend.services.receivables import PAYMENTS_AGG_SQL, CREDIT_NOTES_AGG_SQL, payment_summary
 
 router = APIRouter()
 
@@ -15,7 +16,7 @@ async def get_billed_invoices(user: dict = Depends(get_current_user)):
         # for clients they've been granted access to (matches the clients
         # endpoint's access model).
         if user.get("role_id") == 1:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT
                     b.id,
                     b.invoice_no,
@@ -24,17 +25,23 @@ async def get_billed_invoices(user: dict = Depends(get_current_user)):
                     b.client_billed_amount as amount,
                     b.invoice_month,
                     b.invoice_date,
-                    b.status
+                    b.status,
+                    cn.cn_amount,
+                    pay.received,
+                    pay.tds,
+                    pay.last_payment_date
                 FROM billing_entries b
                 JOIN clients c ON b.client_id = c.id
                 JOIN programs p ON b.program_id = p.id
+                LEFT JOIN ({CREDIT_NOTES_AGG_SQL}) cn ON cn.billing_entry_id = b.id
+                LEFT JOIN ({PAYMENTS_AGG_SQL}) pay ON pay.billing_entry_id = b.id
                 WHERE b.invoice_no IS NOT NULL
                   AND b.invoice_no != ''
                   AND b.status != 'Deleted'
                 ORDER BY b.id DESC
             """)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT
                     b.id,
                     b.invoice_no,
@@ -43,10 +50,16 @@ async def get_billed_invoices(user: dict = Depends(get_current_user)):
                     b.client_billed_amount as amount,
                     b.invoice_month,
                     b.invoice_date,
-                    b.status
+                    b.status,
+                    cn.cn_amount,
+                    pay.received,
+                    pay.tds,
+                    pay.last_payment_date
                 FROM billing_entries b
                 JOIN clients c ON b.client_id = c.id
                 JOIN programs p ON b.program_id = p.id
+                LEFT JOIN ({CREDIT_NOTES_AGG_SQL}) cn ON cn.billing_entry_id = b.id
+                LEFT JOIN ({PAYMENTS_AGG_SQL}) pay ON pay.billing_entry_id = b.id
                 JOIN user_client_access uca ON uca.client_id = c.id
                 WHERE b.invoice_no IS NOT NULL
                   AND b.invoice_no != ''
@@ -65,7 +78,10 @@ async def get_billed_invoices(user: dict = Depends(get_current_user)):
                 "amount": float(r[4]) if r[4] else 0,
                 "invoice_month": r[5],
                 "invoice_date": r[6].strftime("%Y-%m-%d") if r[6] else None,
-                "status": r[7] or "Billed"
+                "status": r[7] or "Billed",
+                "credit_notes": float(r[8] or 0),
+                "last_payment_date": r[11].isoformat() if r[11] else None,
+                **payment_summary(r[4], r[8], r[9], r[10]),
             }
             for r in rows
         ]
@@ -99,6 +115,14 @@ async def unbill_invoice(entry_id: int, user: dict = Depends(require_admin)):
         if not row:
             raise HTTPException(status_code=404, detail="Billed invoice not found")
         old_status, old_invoice_no, old_invoice_date, old_funnel_number, old_expense_type_id = row
+
+        # Money received must stay attached to an invoice: remove payments first.
+        cursor.execute("SELECT COUNT(*) FROM payments WHERE billing_entry_id = %s AND NOT is_deleted", (entry_id,))
+        if cursor.fetchone()[0] > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="This invoice has payments recorded against it. Delete them in Receivables before moving it back to projected.",
+            )
 
         cursor.execute("SELECT id FROM expense_types WHERE expense_type_name = 'Projected'")
         result = cursor.fetchone()

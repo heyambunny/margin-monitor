@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { FileText, IndianRupee, Building2, TrendingUp, Undo2, Receipt } from 'lucide-react';
+import { FileText, IndianRupee, Wallet, Undo2, Receipt, HandCoins } from 'lucide-react';
+import { PaymentPanel, PAYMENT_STATUS_TONE, type ReceivableInvoice } from '@/components/app/PaymentPanel';
 import toast from 'react-hot-toast';
 import { API_URL } from '@/lib/api';
 import { formatDate, formatINR } from '@/lib/format';
@@ -27,6 +28,8 @@ export default function BilledPage() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterClient, setFilterClient] = useState('');
+  const [filterPayment, setFilterPayment] = useState('');
+  const [paymentForId, setPaymentForId] = useState<number | null>(null);
   const [clients, setClients] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('id');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -52,7 +55,7 @@ export default function BilledPage() {
 
   useEffect(() => {
     applyFilters();
-  }, [bills, searchTerm, filterClient, sortKey, sortDir]);
+  }, [bills, searchTerm, filterClient, filterPayment, sortKey, sortDir]);
 
   const fetchData = async () => {
     setIsFetching(true);
@@ -93,6 +96,10 @@ export default function BilledPage() {
       filtered = filtered.filter(b => b.client_name === filterClient);
     }
 
+    if (filterPayment) {
+      filtered = filtered.filter(b => b.payment_status === filterPayment);
+    }
+
     filtered.sort((a, b) => {
       const av = a[sortKey] ?? '';
       const bv = b[sortKey] ?? '';
@@ -116,6 +123,7 @@ export default function BilledPage() {
   const clearFilters = () => {
     setSearchTerm('');
     setFilterClient('');
+    setFilterPayment('');
   };
 
   const totalPages = Math.ceil(filteredBills.length / itemsPerPage);
@@ -160,7 +168,6 @@ export default function BilledPage() {
   }
 
   const totalAmount = filteredBills.reduce((sum, b) => sum + (b.amount || 0), 0);
-  const visibleClients = new Set(filteredBills.map(b => b.client_name)).size;
   const sortProps = { activeSortKey: sortKey, sortDir, onSort: toggleSort };
   const colCount = isAdmin ? 7 : 6;
 
@@ -169,7 +176,7 @@ export default function BilledPage() {
       <PageHeader
         icon={Receipt}
         title="Billed Invoices"
-        subtitle="Every invoice that has been billed"
+        subtitle="Every billed invoice and whether it's been paid · click one to record a payment"
         gradient="from-emerald-500 to-teal-500"
         actions={<RefreshButton onClick={fetchData} loading={isFetching} />}
       />
@@ -178,8 +185,8 @@ export default function BilledPage() {
         stats={[
           { label: 'Invoices', value: filteredBills.length, icon: FileText, color: 'blue' },
           { label: 'Total Billed', value: totalAmount, icon: IndianRupee, color: 'emerald', money: true },
-          { label: 'Clients', value: visibleClients, icon: Building2, color: 'purple' },
-          { label: 'Avg Invoice', value: filteredBills.length ? totalAmount / filteredBills.length : 0, icon: TrendingUp, color: 'amber', money: true },
+          { label: 'Received', value: filteredBills.reduce((s, b) => s + (b.received || 0) + (b.tds || 0), 0), icon: HandCoins, color: 'cyan', money: true },
+          { label: 'Outstanding', value: filteredBills.reduce((s, b) => s + (b.outstanding || 0), 0), icon: Wallet, color: 'amber', money: true },
         ]}
       />
 
@@ -191,7 +198,15 @@ export default function BilledPage() {
             <option key={c} value={c}>{c}</option>
           ))}
         </FilterSelect>
-        <ClearFiltersButton show={Boolean(searchTerm || filterClient)} onClick={clearFilters} />
+        <FilterSelect value={filterPayment} onChange={setFilterPayment}>
+          <option value="">Any payment status</option>
+          <option value="Unpaid">Unpaid</option>
+          <option value="Partially Paid">Partially paid</option>
+          <option value="Paid">Paid</option>
+          <option value="Overpaid">Overpaid</option>
+          <option value="No Dues">No dues</option>
+        </FilterSelect>
+        <ClearFiltersButton show={Boolean(searchTerm || filterClient || filterPayment)} onClick={clearFilters} />
       </FilterBar>
 
       <TableShell
@@ -204,18 +219,22 @@ export default function BilledPage() {
         mobile={
           <MobileList empty={<EmptyState title="No billed invoices found" />}>
             {currentBills.map((b, i) => (
-              <MobileCard key={b.id} index={i}>
+              <MobileCard key={b.id} index={i} onClick={() => setPaymentForId(b.id)}>
                 <div className="flex items-start justify-between gap-3">
                   <EntityCell name={b.client_name} sub={b.program_name} />
-                  <span className={`text-sm font-semibold ${ui.text} tabular-nums whitespace-nowrap`}>{formatINR(b.amount)}</span>
+                  <div className="text-right shrink-0">
+                    <p className={`text-sm font-semibold ${ui.text} tabular-nums whitespace-nowrap`}>{formatINR(b.amount)}</p>
+                    {b.outstanding > 0 && <p className="text-[11px] text-amber-400 tabular-nums">{formatINR(b.outstanding)} due</p>}
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pl-11 text-xs">
                   <span className={`font-medium ${ui.text}`}>{b.invoice_no || '-'}</span>
                   {b.invoice_month && <Chip>{b.invoice_month}</Chip>}
                   <span className={ui.muted}>{formatDate(b.invoice_date)}</span>
+                  <Badge tone={PAYMENT_STATUS_TONE[b.payment_status] || 'gray'} dot>{b.payment_status}</Badge>
                   {isAdmin && (
                     <button
-                      onClick={() => setUnbillTarget(b)}
+                      onClick={(e) => { e.stopPropagation(); setUnbillTarget(b); }}
                       className="ml-auto inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-amber-400 bg-amber-500/10 active:bg-amber-500/20"
                     >
                       <Undo2 className="h-3.5 w-3.5" /> Unbill
@@ -245,22 +264,25 @@ export default function BilledPage() {
             />
           ) : (
             currentBills.map((b, i) => (
-              <Tr key={b.id} index={i}>
+              <Tr key={b.id} index={i} onClick={() => setPaymentForId(b.id)}>
                 <TdAccent className={`text-xs font-mono ${ui.textSoft}`}>#{b.id}</TdAccent>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <span className={`text-sm font-medium ${ui.text}`}>{b.invoice_no || '-'}</span>
-                    <Badge tone="green" dot>Billed</Badge>
+                    <Badge tone={PAYMENT_STATUS_TONE[b.payment_status] || 'gray'} dot>{b.payment_status}</Badge>
                   </div>
                 </td>
                 <td className="px-4 py-3"><EntityCell name={b.client_name} sub={b.program_name} /></td>
                 <td className="px-4 py-3">{b.invoice_month ? <Chip>{b.invoice_month}</Chip> : <span className={ui.textSoft}>-</span>}</td>
                 <td className={`px-4 py-3 text-xs ${ui.textSoft} whitespace-nowrap`}>{formatDate(b.invoice_date)}</td>
-                <td className={`px-4 py-3 text-right text-sm font-semibold ${ui.text} whitespace-nowrap tabular-nums`}>{formatINR(b.amount)}</td>
+                <td className="px-4 py-3 text-right whitespace-nowrap">
+                  <p className={`text-sm font-semibold ${ui.text} tabular-nums`}>{formatINR(b.amount)}</p>
+                  {b.outstanding > 0 && <p className="text-[11px] text-amber-400 tabular-nums">{formatINR(b.outstanding)} due</p>}
+                </td>
                 {isAdmin && (
                   <td className="px-4 py-3 text-right">
                     <button
-                      onClick={() => setUnbillTarget(b)}
+                      onClick={(e) => { e.stopPropagation(); setUnbillTarget(b); }}
                       title="Move back to projected"
                       className="touch-show inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-md text-amber-400 bg-amber-500/10 opacity-60 group-hover:opacity-100 hover:bg-amber-500/20 transition"
                     >
@@ -304,6 +326,15 @@ export default function BilledPage() {
           </>
         )}
       </Modal>
+
+      <PaymentPanel
+        invoice={(() => {
+          const b = bills.find((x) => x.id === paymentForId);
+          return b ? ({ ...b, billed_amount: b.amount } as ReceivableInvoice) : null;
+        })()}
+        onClose={() => setPaymentForId(null)}
+        onChanged={fetchData}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from backend.db import get_connection, release_connection
 from backend.auth.jwt_handler import require_roles
+from backend.services.receivables import PAYMENTS_AGG_SQL
 
 router = APIRouter()
 
@@ -17,7 +18,7 @@ def get_dashboard(user: dict = Depends(require_roles(1, 3))):
         cursor = conn.cursor()
 
         # Query with vendor_cost calculated from vendor_expenses
-        query = """
+        query = f"""
         SELECT
             b.id,
             b.client_id,
@@ -35,7 +36,10 @@ def get_dashboard(user: dict = Depends(require_roles(1, 3))):
             -- it has an invoice number. Older entries mark this with expense
             -- type 'Billed', Convert to Billing with status 'Billed' - both
             -- always carry an invoice number.
-            (b.invoice_no IS NOT NULL AND b.invoice_no <> '') AS is_billed
+            (b.invoice_no IS NOT NULL AND b.invoice_no <> '') AS is_billed,
+            b.invoice_date,
+            COALESCE(pay.received, 0) AS received,
+            COALESCE(pay.tds, 0) AS tds_received
         FROM billing_entries b
         LEFT JOIN clients c ON b.client_id = c.id
         LEFT JOIN (
@@ -48,6 +52,7 @@ def get_dashboard(user: dict = Depends(require_roles(1, 3))):
                 ON ve.vendor_id = v.id
             GROUP BY ve.billing_entry_id
         ) ve ON b.id = ve.billing_entry_id
+        LEFT JOIN ({PAYMENTS_AGG_SQL}) pay ON pay.billing_entry_id = b.id
         LEFT JOIN (
             SELECT billing_entry_id, SUM(cn_amount) AS cn_amount
             FROM credit_notes
@@ -82,5 +87,37 @@ def get_dashboard(user: dict = Depends(require_roles(1, 3))):
     except Exception as e:
         print(f"Dashboard error: {e}")
         return []
+    finally:
+        release_connection(conn)
+
+
+# Payments received per month of the current financial year (Apr-Mar), for the
+# dashboard's collections trend. Same client scoping as /dashboard.
+@router.get("/dashboard/collections")
+def get_collections(user: dict = Depends(require_roles(1, 3))):
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        query = """
+            SELECT to_char(p.payment_date, 'Mon') AS month, SUM(p.amount) AS received, SUM(p.tds_amount) AS tds
+            FROM payments p
+            JOIN billing_entries b ON b.id = p.billing_entry_id
+            WHERE NOT p.is_deleted
+              AND b.status <> 'Deleted'
+              AND p.payment_date >= make_date(
+                    CASE WHEN EXTRACT(MONTH FROM CURRENT_DATE) >= 4 THEN EXTRACT(YEAR FROM CURRENT_DATE)::int
+                         ELSE EXTRACT(YEAR FROM CURRENT_DATE)::int - 1 END, 4, 1)
+        """
+        params = []
+        if user["role_id"] != 1:
+            cursor.execute("SELECT client_id FROM user_client_access WHERE user_id = %s", (user["user_id"],))
+            client_ids = [r[0] for r in cursor.fetchall()]
+            if not client_ids:
+                return []
+            query += " AND b.client_id = ANY(%s)"
+            params.append(client_ids)
+        query += " GROUP BY 1"
+        cursor.execute(query, params or None)
+        return [{"month": r[0], "received": float(r[1] or 0), "tds": float(r[2] or 0)} for r in cursor.fetchall()]
     finally:
         release_connection(conn)

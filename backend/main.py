@@ -14,6 +14,7 @@ from backend.routes.bulk_upload import router as bulk_router
 from backend.routes.overview import router as overview_router
 from backend.routes.email import router as email_router
 from backend.routes.dropdowns import router as dropdowns_router
+from backend.routes.receivables import router as receivables_router
 
 app = FastAPI()
 
@@ -43,6 +44,7 @@ app.include_router(bulk_router, prefix="/api")
 app.include_router(overview_router, prefix="/api")
 app.include_router(email_router, prefix="/api")
 app.include_router(dropdowns_router, prefix="/api")
+app.include_router(receivables_router, prefix="/api")
 
 @app.get("/")
 async def root():
