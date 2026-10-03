@@ -238,11 +238,14 @@ No migration tool: schema changes are idempotent one-off scripts in
 `backend/scripts/migrate_*.py`, run on each DB before restarting the backend:
 
 ```bash
-ssh -p 24 root@216.48.185.160 "cd /root/margin-monitor && set -a && . ./.env && set +a && PYTHONPATH=. venv/bin/python backend/scripts/migrate_xxx.py"
+ssh -p 24 root@216.48.185.160 "cd /root/margin-monitor && PYTHONPATH=. venv/bin/python backend/scripts/migrate_xxx.py"
 ```
 
+(`backend/db.py` loads `.env` itself via python-dotenv. Don't `source` the
+prod `.env` in the shell - `SMTP_NAME=Billing Team` is unquoted and breaks it.)
+
 Existing: `migrate_email_tables.py` (run on prod ✓), `migrate_payments.py`
-(**not yet run on prod**). Rollback: `git checkout <sha> && npm run build`
+(run on prod ✓). Rollback: `git checkout <sha> && npm run build`
 then restart the two services.
 
 Email Center needs `SMTP_HOST`, `SMTP_PORT`, `SMTP_EMAIL`, `SMTP_PASSWORD`,
@@ -260,11 +263,8 @@ password). Restart the backend after changing them.
 
 ## Current state (2026-10-03)
 
-- Production is at `ce59015` (UI redesign, mobile + PWA, unbill, delete on
-  convert, invoice-month edit, billed figure fix, email tables + SMTP).
-- **Receivables** (incl. bulk payments + export) is committed locally,
-  **not pushed or deployed**. Deploying it requires running
-  `migrate_payments.py` on prod (creates `payments` with `batch_id`).
+- Production is at `c94e1f5` (everything above incl. Receivables, bulk
+  payments and export; `migrate_payments.py` run on prod 2026-10-03).
 - Local DB has user-entered test payments and invoices (e.g. #1181, #178,
   V-Guard invoices dated 03 Oct 2026) - leave unless told otherwise.
 
