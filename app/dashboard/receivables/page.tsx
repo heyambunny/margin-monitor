@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { HandCoins, IndianRupee, AlertTriangle, CircleDashed, Wallet } from 'lucide-react';
+import { HandCoins, IndianRupee, AlertTriangle, CircleDashed, Wallet, Download, Check, Minus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_URL } from '@/lib/api';
 import { formatDate, formatINR } from '@/lib/format';
@@ -13,6 +13,7 @@ import {
   EmptyState, PageSkeleton,
 } from '@/components/app/ui';
 import { PaymentPanel, PAYMENT_STATUS_TONE, type ReceivableInvoice } from '@/components/app/PaymentPanel';
+import { BulkPaymentPanel } from '@/components/app/BulkPaymentPanel';
 
 type Row = ReceivableInvoice & { invoice_month: string; last_payment_date: string | null; payment_count: number; days_since_invoice: number | null };
 type SortKey = 'outstanding' | 'invoice_date' | 'client_name' | 'billed_amount' | 'days_since_invoice';
@@ -38,6 +39,9 @@ export default function ReceivablesPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // Invoices ticked for one payment covering several invoices.
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -110,6 +114,67 @@ export default function ReceivablesPage() {
   const partial = filtered.filter((r) => r.payment_status === 'Partially Paid').length;
 
   const selected = rows.find((r) => r.id === selectedId) || null;
+
+  // Only invoices with something left to collect can be ticked.
+  const selectable = (r: Row) => r.outstanding > 0;
+  const toggle = (id: number) => setChecked((c) => {
+    const next = new Set(c);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const selectableFiltered = filtered.filter(selectable);
+  const allChecked = selectableFiltered.length > 0 && selectableFiltered.every((r) => checked.has(r.id));
+  const someChecked = selectableFiltered.some((r) => checked.has(r.id));
+  const toggleAll = () => setChecked((c) => {
+    const next = new Set(c);
+    if (allChecked) selectableFiltered.forEach((r) => next.delete(r.id));
+    else selectableFiltered.forEach((r) => next.add(r.id));
+    return next;
+  });
+  const checkedRows = rows.filter((r) => checked.has(r.id) && selectable(r));
+  const checkedOutstanding = checkedRows.reduce((s, r) => s + r.outstanding, 0);
+
+  // CSV of the invoices with money still due, respecting the current filters.
+  const exportOutstanding = () => {
+    const data = filtered.filter((r) => r.outstanding > 0);
+    if (data.length === 0) {
+      toast('No outstanding invoices in the current view');
+      return;
+    }
+    const esc = (v: unknown) => {
+      const t = v === null || v === undefined ? '' : String(v);
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const header = ['Invoice No', 'Client', 'Program', 'Invoice Date', 'Invoice Month', 'Billed', 'Credit Notes', 'Received', 'TDS',
+      'Outstanding', 'Payment Status', 'Days Since Invoice', 'Last Payment Date'];
+    const lines = data.map((r) => [r.invoice_no, r.client_name, r.program_name, r.invoice_date, r.invoice_month, r.billed_amount,
+      r.credit_notes, r.received, r.tds, r.outstanding, r.payment_status, r.days_since_invoice, r.last_payment_date].map(esc).join(','));
+    const total = data.reduce((s, r) => s + r.outstanding, 0);
+    const csv = [header.join(','), ...lines, ['TOTAL', '', '', '', '', '', '', '', '', Math.round(total * 100) / 100].join(',')].join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `outstanding_invoices_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${data.length} outstanding invoice${data.length === 1 ? '' : 's'}`);
+  };
+
+  const CheckBox = ({ on, partial = false, onClick, disabled = false, label }: { on: boolean; partial?: boolean; onClick: () => void; disabled?: boolean; label: string }) => (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={partial ? 'mixed' : on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className={`h-5 w-5 shrink-0 rounded-md border flex items-center justify-center transition ${
+        on || partial ? 'bg-emerald-500 border-emerald-500 text-white' : `${ui.border} ${ui.isDark ? 'bg-white/5' : 'bg-white'} hover:border-emerald-500/60`
+      } disabled:opacity-25 disabled:cursor-not-allowed`}
+    >
+      {on ? <Check className="h-3.5 w-3.5" /> : partial ? <Minus className="h-3.5 w-3.5" /> : null}
+    </button>
+  );
   const hasFilters = Boolean(searchTerm || filterClient || filterStatus !== 'open' || filterAge);
   const sortProps = { activeSortKey: sortKey, sortDir, onSort: toggleSort };
 
@@ -126,9 +191,20 @@ export default function ReceivablesPage() {
       <PageHeader
         icon={HandCoins}
         title="Receivables"
-        subtitle="Track payments received against billed invoices"
+        subtitle="Track payments received · tick several invoices to record one transfer covering them"
         gradient="from-emerald-500 to-cyan-500"
-        actions={<RefreshButton onClick={fetchData} loading={isFetching} />}
+        actions={
+          <>
+            <RefreshButton onClick={fetchData} loading={isFetching} />
+            <button
+              onClick={exportOutstanding}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/20 hover:from-emerald-600 hover:to-teal-600 active:scale-[0.98] transition"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export outstanding
+            </button>
+          </>
+        }
       />
 
       <StatGrid
@@ -169,9 +245,12 @@ export default function ReceivablesPage() {
         mobile={
           <MobileList empty={<EmptyState title="No invoices match" hint={filterStatus === 'open' ? 'Nothing is waiting for payment.' : undefined} />}>
             {pageRows.map((r, i) => (
-              <MobileCard key={r.id} index={i} onClick={() => setSelectedId(r.id)}>
+              <MobileCard key={r.id} index={i} onClick={() => setSelectedId(r.id)} highlight={checked.has(r.id)}>
                 <div className="flex items-start justify-between gap-3">
-                  <EntityCell name={r.client_name} sub={r.invoice_no} />
+                  <div className="flex items-center gap-3 min-w-0">
+                    {selectable(r) && <CheckBox on={checked.has(r.id)} onClick={() => toggle(r.id)} label={`Select ${r.invoice_no}`} />}
+                    <EntityCell name={r.client_name} sub={r.invoice_no} />
+                  </div>
                   <div className="text-right shrink-0">
                     <p className={`text-sm font-semibold tabular-nums ${r.outstanding > 0 ? 'text-amber-400' : ui.text}`}>{formatINR(r.outstanding)}</p>
                     <p className={`text-[11px] ${ui.muted}`}>of {formatINR(r.due)}</p>
@@ -188,6 +267,10 @@ export default function ReceivablesPage() {
         }
       >
         <THead>
+          <Th className="w-10 !pr-0">
+            <CheckBox on={allChecked} partial={!allChecked && someChecked} onClick={toggleAll} disabled={selectableFiltered.length === 0}
+              label={allChecked ? 'Clear selection' : `Select all ${selectableFiltered.length} invoices with money due`} />
+          </Th>
           <Th sortKey="client_name" {...sortProps}>Invoice / Client</Th>
           <Th sortKey="invoice_date" {...sortProps}>Invoice Date</Th>
           <Th sortKey="billed_amount" align="right" {...sortProps}>Billed</Th>
@@ -200,7 +283,7 @@ export default function ReceivablesPage() {
         <tbody>
           {pageRows.length === 0 ? (
             <EmptyRow
-              colSpan={8}
+              colSpan={9}
               title="No invoices match"
               hint={filterStatus === 'open' && !term && !filterClient && !filterAge ? 'Nothing is waiting for payment.' : undefined}
               action={hasFilters ? <button onClick={clearFilters} className="text-xs text-blue-400 hover:underline">Clear filters</button> : undefined}
@@ -209,7 +292,10 @@ export default function ReceivablesPage() {
             pageRows.map((r, i) => {
               const pct = r.due > 0 ? Math.min(100, ((r.received + r.tds) / r.due) * 100) : 0;
               return (
-                <Tr key={r.id} index={i} onClick={() => setSelectedId(r.id)}>
+                <Tr key={r.id} index={i} onClick={() => setSelectedId(r.id)} highlight={checked.has(r.id)}>
+                  <td className="pl-4 py-3 w-10">
+                    {selectable(r) && <CheckBox on={checked.has(r.id)} onClick={() => toggle(r.id)} label={`Select ${r.invoice_no}`} />}
+                  </td>
                   <TdAccent>
                     <EntityCell name={r.client_name} sub={<span className="font-mono">{r.invoice_no}</span>} />
                   </TdAccent>
@@ -239,6 +325,43 @@ export default function ReceivablesPage() {
       </TableShell>
 
       <PaymentPanel invoice={selected} onClose={() => setSelectedId(null)} onChanged={fetchData} />
+
+      {/* Selection bar: one payment covering several invoices */}
+      {checkedRows.length > 0 && !bulkOpen && (
+        <div
+          className="fixed inset-x-3 lg:left-auto lg:right-6 z-30 animate-in fade-in slide-in-from-bottom-4 duration-200"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+        >
+          <div className={`flex flex-wrap items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border ${
+            ui.isDark ? 'bg-[#1b2033] border-white/10' : 'bg-white border-gray-200'
+          }`}>
+            <span className={`text-sm ${ui.text}`}>
+              <span className="font-semibold">{checkedRows.length}</span> selected ·{' '}
+              <span className="text-amber-400 font-semibold tabular-nums">{formatINR(checkedOutstanding)}</span>
+              <span className={ui.muted}> outstanding</span>
+            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <button onClick={() => setChecked(new Set())} className={`flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg ${ui.muted} ${ui.hoverBtn}`}>
+                <X className="h-3.5 w-3.5" /> Clear
+              </button>
+              <button
+                onClick={() => setBulkOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium rounded-lg text-white bg-gradient-to-r from-emerald-500 to-teal-500 shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition"
+              >
+                <HandCoins className="h-4 w-4" /> Record payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkOpen && (
+        <BulkPaymentPanel
+          invoices={checkedRows}
+          onClose={() => setBulkOpen(false)}
+          onDone={() => { setChecked(new Set()); fetchData(); }}
+        />
+      )}
     </div>
   );
 }

@@ -86,6 +86,7 @@ auth: `POST /login` (body `{email,password,app}`), `POST /refresh[?app=true]`,
 `POST /edit-projection/{id}` · billing: `POST /billing/convert/{id}`,
 `GET /billed`, `POST /billed/{id}/unbill` (Admin) · receivables:
 `GET /receivables`, `GET|POST /receivables/{entry_id}/payments`,
+`POST /receivables/bulk-payments`,
 `PUT|DELETE /payments/{id}` · `GET /dashboard`, `/dashboard/collections`,
 `/overview`, `/finance-dashboard`, `/reports` · `POST /audit-logs` ·
 users/access: `GET|POST /users`, `GET /user-clients/{id}`,
@@ -135,6 +136,13 @@ users/access: `GET|POST /users`, `GET /user-clients/{id}`,
   Finance + Admin can edit/delete (soft delete), all audited. An invoice with
   payments can't be unbilled. Payment panel: Full payment preselected and
   prefilled, amount auto-recalculates as TDS changes, panel closes on save.
+- **One transfer for several invoices**: tick invoices in Receivables →
+  bulk panel (`components/app/BulkPaymentPanel.tsx`) with shared date / mode /
+  reference, per-invoice amount + TDS, optional bank amount with match check
+  and "Distribute" (oldest invoice first). `POST /receivables/bulk-payments`
+  saves all rows in one transaction with a shared `payments.batch_id`;
+  history shows "part of one transfer for N invoices". "Export outstanding"
+  downloads a CSV of invoices with money due (respects filters, TOTAL row).
 - Unbill and Deleted entries are excluded from projections/reports/dashboard.
 - Business data is **confidential**: never put real numbers, client names or
   invoice numbers in sample/decorative UI, placeholders or docs.
@@ -254,10 +262,11 @@ password). Restart the backend after changing them.
 
 - Production is at `ce59015` (UI redesign, mobile + PWA, unbill, delete on
   convert, invoice-month edit, billed figure fix, email tables + SMTP).
-- **Receivables** (`5c2d7e5`, `587a172`) is committed locally, **not pushed
-  or deployed**. Deploying it requires running `migrate_payments.py` on prod.
-- Local DB has two user-entered test payments (#1181 ₹2,75,000 ref
-  787878RYRY; #178 ₹1,500) - leave unless told otherwise.
+- **Receivables** (incl. bulk payments + export) is committed locally,
+  **not pushed or deployed**. Deploying it requires running
+  `migrate_payments.py` on prod (creates `payments` with `batch_id`).
+- Local DB has user-entered test payments and invoices (e.g. #1181, #178,
+  V-Guard invoices dated 03 Oct 2026) - leave unless told otherwise.
 
 ## Known issues / backlog
 

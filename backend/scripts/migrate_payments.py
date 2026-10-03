@@ -2,7 +2,8 @@
 
 One row per payment received against a billed invoice (billing_entries row).
 An invoice can have several (partial) payments. Deleting a payment only marks
-it is_deleted so the history and audit trail stay intact.
+it is_deleted so the history and audit trail stay intact. Payments recorded
+together for one bank transfer covering several invoices share a batch_id.
 
 Run from the repo root:
     PYTHONPATH=. venv/bin/python backend/scripts/migrate_payments.py
@@ -32,7 +33,10 @@ def main():
                 CHECK (amount + tds_amount > 0)
             )
         """)
+        # Added after the first version of this table - keep for DBs created then.
+        cur.execute("ALTER TABLE payments ADD COLUMN IF NOT EXISTS batch_id VARCHAR(36)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_payments_entry ON payments (billing_entry_id) WHERE NOT is_deleted")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_payments_batch ON payments (batch_id) WHERE batch_id IS NOT NULL")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_payments_date ON payments (payment_date) WHERE NOT is_deleted")
         conn.commit()
         print("payments: ready")

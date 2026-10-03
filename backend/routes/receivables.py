@@ -1,5 +1,6 @@
+import uuid
 from datetime import date
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -24,6 +25,20 @@ class PaymentIn(BaseModel):
     payment_mode: str
     reference_no: str
     remarks: Optional[str] = None
+
+
+class BulkAllocation(BaseModel):
+    billing_entry_id: int
+    amount: float
+    tds_amount: float = 0
+
+
+class BulkPaymentIn(BaseModel):
+    payment_date: date
+    payment_mode: str
+    reference_no: str
+    remarks: Optional[str] = None
+    allocations: List[BulkAllocation]
 
 
 def _validate(data: PaymentIn):
@@ -124,10 +139,15 @@ def list_payments(entry_id: int, user: dict = Depends(require_roles(1, 2))):
         _check_access(cursor, user, client_id)
         cursor.execute("""
             SELECT p.id, p.payment_date, p.amount, p.tds_amount, p.payment_mode, p.reference_no, p.remarks,
-                   u.name, p.created_at, uu.name, p.updated_at
+                   u.name, p.created_at, uu.name, p.updated_at,
+                   p.batch_id, lot.invoices, lot.total
             FROM payments p
             LEFT JOIN users u ON u.id = p.created_by
             LEFT JOIN users uu ON uu.id = p.updated_by
+            LEFT JOIN (
+                SELECT batch_id, COUNT(*) AS invoices, SUM(amount) AS total
+                FROM payments WHERE batch_id IS NOT NULL AND NOT is_deleted GROUP BY batch_id
+            ) lot ON lot.batch_id = p.batch_id
             WHERE p.billing_entry_id = %s AND NOT p.is_deleted
             ORDER BY p.payment_date DESC, p.id DESC
         """, (entry_id,))
@@ -144,6 +164,9 @@ def list_payments(entry_id: int, user: dict = Depends(require_roles(1, 2))):
                 "recorded_at": r[8].isoformat() if r[8] else None,
                 "updated_by": r[9],
                 "updated_at": r[10].isoformat() if r[10] else None,
+                "batch_id": r[11],
+                "batch_invoices": r[12],
+                "batch_total": float(r[13]) if r[13] is not None else None,
             }
             for r in cursor.fetchall()
         ]
@@ -180,6 +203,62 @@ def record_payment(entry_id: int, data: PaymentIn, user: dict = Depends(require_
     except Exception as e:
         conn.rollback()
         print(f"Error recording payment for entry {entry_id}: {e}")
+        raise HTTPException(status_code=500, detail="Couldn't record the payment")
+    finally:
+        release_connection(conn)
+
+
+# One bank transfer covering several invoices: record a payment against each
+# invoice in a single transaction, linked by a shared batch_id. All or nothing.
+@router.post("/receivables/bulk-payments")
+def record_bulk_payment(data: BulkPaymentIn, user: dict = Depends(require_roles(1, 2))):
+    if not data.allocations:
+        raise HTTPException(status_code=400, detail="Select at least one invoice")
+    ids = [a.billing_entry_id for a in data.allocations]
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=400, detail="An invoice is listed more than once")
+    for a in data.allocations:
+        _validate(PaymentIn(payment_date=data.payment_date, amount=a.amount, tds_amount=a.tds_amount,
+                            payment_mode=data.payment_mode, reference_no=data.reference_no, remarks=data.remarks))
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        batch_id = str(uuid.uuid4())
+        reference = data.reference_no.strip()
+        remarks = (data.remarks or '').strip() or None
+        allowed = None if user["role_id"] == 1 else set(get_user_client_ids(cursor, user["user_id"]))
+        created = []
+        for a in data.allocations:
+            _, client_id, invoice_no = _billed_entry(cursor, a.billing_entry_id)
+            if allowed is not None and client_id not in allowed:
+                raise HTTPException(status_code=403, detail=f"You do not have access to the client of invoice {invoice_no}")
+            cursor.execute("""
+                INSERT INTO payments (billing_entry_id, payment_date, amount, tds_amount, payment_mode, reference_no,
+                                      remarks, created_by, batch_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (a.billing_entry_id, data.payment_date, a.amount, a.tds_amount, data.payment_mode,
+                  reference, remarks, user["user_id"], batch_id))
+            payment_id = cursor.fetchone()[0]
+            created.append(payment_id)
+            log_audit(cursor, "payments", payment_id, "payment",
+                      None,
+                      f"Invoice {invoice_no} (entry #{a.billing_entry_id}): {a.amount} received"
+                      + (f" + {a.tds_amount} TDS" if a.tds_amount else "")
+                      + f" on {data.payment_date} via {data.payment_mode}, ref {reference}"
+                      + f" (lot of {len(data.allocations)} invoices)",
+                      "INSERT", user["user_id"], user["role_id"], "receivables", "HIGH")
+        conn.commit()
+        total = round(sum(a.amount for a in data.allocations), 2)
+        return {"batch_id": batch_id, "payment_ids": created, "total": total,
+                "message": f"Payment recorded against {len(created)} invoices"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        print(f"Error recording bulk payment: {e}")
         raise HTTPException(status_code=500, detail="Couldn't record the payment")
     finally:
         release_connection(conn)

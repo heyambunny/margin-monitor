@@ -43,6 +43,9 @@ type Payment = {
   remarks: string | null;
   recorded_by: string | null;
   updated_by: string | null;
+  batch_id: string | null;
+  batch_invoices: number | null;
+  batch_total: number | null;
 };
 
 const today = () => new Date().toISOString().split('T')[0];
@@ -401,6 +404,11 @@ export function PaymentPanel({
                       {p.tds_amount > 0 && <span className={`ml-1.5 text-xs font-normal ${ui.muted}`}>+ {formatINR(p.tds_amount)} TDS</span>}
                     </p>
                     <p className={`text-xs ${ui.textSoft}`}>{formatDate(p.payment_date)} · {p.payment_mode} · <span className="font-mono">{p.reference_no}</span></p>
+                    {p.batch_id && (p.batch_invoices ?? 0) > 1 && (
+                      <p className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] text-blue-400 bg-blue-500/10">
+                        Part of one transfer for {p.batch_invoices} invoices · {formatINR(p.batch_total || 0)} total
+                      </p>
+                    )}
                     {p.remarks && <p className={`text-xs ${ui.muted} mt-0.5`}>{p.remarks}</p>}
                     <p className={`text-[11px] ${ui.muted} mt-0.5`}>
                       Recorded by {p.recorded_by || '—'}{p.updated_by ? ` · edited by ${p.updated_by}` : ''}
