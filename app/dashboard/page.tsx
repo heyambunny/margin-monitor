@@ -7,7 +7,7 @@ import { useTheme } from '@/lib/providers/ThemeProvider';
 import { AnimatedNumber } from '@/components/ui/animated-number';
 import {
   TrendingUp, IndianRupee, Users, Receipt, RefreshCw, BarChart3, Activity, Zap, Clock,
-  TrendingDown, Calendar, Search, X, ChevronUp, ChevronDown, Sparkles, AlertTriangle, HandCoins, Wallet,
+  TrendingDown, Calendar, Search, X, ChevronUp, ChevronDown, Sparkles, AlertTriangle, HandCoins, Wallet, FileMinus,
 } from 'lucide-react';
 import {
   Area,
@@ -478,24 +478,32 @@ export default function DashboardPage() {
 
   const billedShare = total.amt > 0 ? (billed.amt / total.amt) * 100 : 0;
 
-  // Collections: payments (incl. TDS) against billed entries, and what's left
-  // to collect (billed - credit notes - received), per entry and per client.
+  // Collections: payments (incl. TDS) against billed entries, credit notes, and
+  // what's left to collect (billed - credit notes - received), per entry and per
+  // client. Billed = Collected + Credit notes + Outstanding, except that a credit
+  // note larger than its invoice only counts up to the invoice amount (the rest
+  // is shown as cnExcess) and overpayments make Collected exceed the invoice.
   const sixtyDaysAgo = Date.now() - 60 * 24 * 3600 * 1000;
-  const collection = { collected: 0, outstanding: 0, overdue: 0 };
+  const collection = { collected: 0, creditNotes: 0, cnExcess: 0, outstanding: 0, overdue: 0 };
   const clientCollections: Record<string, { collected: number; outstanding: number }> = {};
   dashboardData.forEach((d: any) => {
     if (!d.is_billed) return;
+    const amount = d.client_billed_amount || 0;
+    const cn = d.credit_note || 0;
     const settled = (d.received || 0) + (d.tds_received || 0);
-    const left = Math.max((d.client_billed_amount || 0) - (d.credit_note || 0) - settled, 0);
+    const left = Math.max(amount - cn - settled, 0);
     collection.collected += settled;
+    collection.creditNotes += Math.min(cn, Math.max(amount, 0));
+    collection.cnExcess += Math.max(cn - Math.max(amount, 0), 0);
     collection.outstanding += left;
     if (d.invoice_date && new Date(d.invoice_date).getTime() < sixtyDaysAgo) collection.overdue += left;
     const c = (clientCollections[d.client_name || 'Unknown'] ||= { collected: 0, outstanding: 0 });
     c.collected += settled;
     c.outstanding += left;
   });
-  const collectedShare = collection.collected + collection.outstanding > 0
-    ? (collection.collected / (collection.collected + collection.outstanding)) * 100 : 0;
+  const collectionBase = collection.collected + collection.creditNotes + collection.outstanding;
+  const collectedShare = collectionBase > 0 ? (collection.collected / collectionBase) * 100 : 0;
+  const cnShare = collectionBase > 0 ? (collection.creditNotes / collectionBase) * 100 : 0;
   const trendData = chartData.map((m: any) => {
     const c = collections.find((x) => x.month === m.month);
     return { ...m, collected: c ? c.received + c.tds : 0 };
@@ -591,13 +599,16 @@ export default function DashboardPage() {
             </div>
             <div className="flex justify-between text-xs text-white/80 mt-3 mb-1.5">
               <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-300" />Collected {collectedShare.toFixed(0)}%</span>
-              <span className="flex items-center gap-1.5">Outstanding {(100 - collectedShare).toFixed(0)}%<span className="h-2 w-2 rounded-full bg-white/40" /></span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-sky-300" />CN {cnShare.toFixed(0)}%</span>
+              <span className="flex items-center gap-1.5">Outstanding {Math.max(100 - collectedShare - cnShare, 0).toFixed(0)}%<span className="h-2 w-2 rounded-full bg-white/40" /></span>
             </div>
-            <div className="h-2.5 rounded-full bg-white/20 overflow-hidden">
-              <div className="h-full rounded-full bg-emerald-300 transition-all duration-1000" style={{ width: `${collectedShare}%` }} />
+            <div className="flex h-2.5 rounded-full bg-white/20 overflow-hidden">
+              <div className="h-full bg-emerald-300 transition-all duration-1000" style={{ width: `${collectedShare}%` }} />
+              <div className="h-full bg-sky-300 transition-all duration-1000" style={{ width: `${cnShare}%` }} />
             </div>
             <div className="flex justify-between text-xs mt-1.5">
               <span className="font-medium">{formatCurrencyShort(collection.collected)}</span>
+              <span className="font-medium">{formatCurrencyShort(collection.creditNotes)}</span>
               <span className="font-medium">{formatCurrencyShort(collection.outstanding)}</span>
             </div>
           </div>
@@ -657,9 +668,16 @@ export default function DashboardPage() {
       </div>
 
       {/* Collections */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'Collected', sub: 'Payments + TDS received', value: collection.collected, icon: HandCoins, cls: 'text-emerald-400', accent: 'from-emerald-500/15' },
+          {
+            label: 'Credit notes',
+            sub: collection.cnExcess > 0.5
+              ? `Issued on billed invoices · ${formatCurrencyShort(collection.cnExcess)} more exceeds its invoice amount`
+              : 'Issued on billed invoices',
+            value: collection.creditNotes, icon: FileMinus, cls: 'text-sky-400', accent: 'from-sky-500/15',
+          },
           { label: 'Outstanding', sub: 'Billed, not yet received', value: collection.outstanding, icon: Wallet, cls: 'text-amber-400', accent: 'from-amber-500/15' },
           { label: 'Overdue', sub: 'Outstanding, invoiced 60+ days ago', value: collection.overdue, icon: AlertTriangle, cls: 'text-rose-400', accent: 'from-rose-500/15' },
         ].map((c, i) => (
